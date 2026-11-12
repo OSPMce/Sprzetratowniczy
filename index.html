@@ -1,0 +1,1341 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ewidencja Sprzętu Ratowniczego</title>
+    
+    <meta name="robots" content="noindex, nofollow">
+    <meta name="theme-color" content="#0f172a">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Ewidencja OSP">
+
+    <!-- React, ReactDOM, Babel -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <!-- Firebase App & Firestore SDK -->
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+
+    <style>
+        @media print {
+            @page { 
+                size: A4 portrait;
+                margin: 10mm; 
+            }
+            
+            * {
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+                color-adjust: exact !important;
+            }
+
+            body { 
+                background: white !important; 
+                color: black !important; 
+                font-size: 10pt !important;
+                font-family: 'Segoe UI', Arial, sans-serif !important;
+                margin: 0 !important;
+                padding: 0 !important;
+            }
+            
+            .no-print { display: none !important; }
+            .print-only { display: block !important; }
+            
+            .print-header {
+                border-bottom: 2px solid black !important;
+                padding-bottom: 12px !important;
+                margin-bottom: 20px !important;
+            }
+
+            .bg-slate-900, .bg-slate-950, .bg-slate-800, div {
+                background-color: transparent !important;
+                color: black !important;
+                box-shadow: none !important;
+            }
+            
+            table {
+                width: 100% !important;
+                border-collapse: collapse !important;
+                margin-top: 5px !important;
+                border: 1px solid black !important;
+            }
+            
+            th, td {
+                color: black !important;
+                border: 1px solid black !important;
+                padding: 8px 10px !important;
+                font-size: 9pt !important;
+                text-align: left !important;
+                vertical-align: middle !important;
+            }
+            
+            th {
+                background-color: #f1f5f9 !important;
+                font-weight: bold !important;
+                text-transform: uppercase !important;
+                font-size: 8pt !important;
+                border-bottom: 2px solid black !important;
+            }
+
+            .badge-print, .print-badge-clean {
+                background: none !important;
+                background-color: transparent !important;
+                border: none !important;
+                padding: 0 !important;
+                font-weight: bold !important;
+                font-size: 9pt !important;
+                color: black !important;
+            }
+
+            .print-signatures {
+                margin-top: 50px !important;
+                display: flex !important;
+                justify-content: space-between !important;
+                page-break-inside: avoid !important;
+            }
+
+            .signature-box {
+                border-top: 1px solid black !important;
+                width: 240px !important;
+                text-align: center !important;
+                padding-top: 6px !important;
+                font-size: 9pt !important;
+                font-weight: bold !important;
+            }
+        }
+        .print-only { display: none; }
+    </style>
+
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('./sw.js')
+                    .then(reg => console.log('ServiceWorker zarejestrowany sukcesem:', reg.scope))
+                    .catch(err => console.log('Błąd rejestracji ServiceWorker:', err));
+            });
+        }
+    </script>
+</head>
+<body class="bg-slate-900 text-slate-100 min-h-screen font-sans">
+
+    <div id="root"></div>
+
+    <!-- KOD REACT -->
+    <script type="text/babel">
+        const { useState, useEffect, useMemo } = React;
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyCrLGk-40kQDIgY4m0vLFyHj9POkEpSNXE",
+            authDomain: "sprzetratowniczy-a2fc7.firebaseapp.com",
+            projectId: "sprzetratowniczy-a2fc7",
+            storageBucket: "sprzetratowniczy-a2fc7.firebasestorage.app",
+            messagingSenderId: "564827604976",
+            appId: "1:564827604976:web:3460aa98dbea07453b7f35",
+            measurementId: "G-JRSGPB47X8"
+        };
+
+        if (!firebase.apps.length) {
+            firebase.initializeApp(firebaseConfig);
+        }
+        const db = firebase.firestore();
+
+        db.enablePersistence({ synchronizeTabs: true }).catch((err) => {
+            if (err.code === 'failed-precondition') console.warn('Persistence włączona tylko w jednej zakładce.');
+            else if (err.code === 'unimplemented') console.warn('Brak obsługi IndexedDB.');
+        });
+
+        function App() {
+            const [currentUser, setCurrentUser] = useState(null);
+            const [isOnline, setIsOnline] = useState(navigator.onLine);
+            const [equipment, setEquipment] = useState([]);
+            const [logs, setLogs] = useState([]);
+            const [loadingData, setLoadingData] = useState(true);
+
+            useEffect(() => {
+                const handleOnline = () => setIsOnline(true);
+                const handleOffline = () => setIsOnline(false);
+                window.addEventListener('online', handleOnline);
+                window.addEventListener('offline', handleOffline);
+
+                return () => {
+                    window.removeEventListener('online', handleOnline);
+                    window.removeEventListener('offline', handleOffline);
+                };
+            }, []);
+
+            const [selectedUserForLogin, setSelectedUserForLogin] = useState(null);
+            const [isResetMode, setIsResetMode] = useState(false);
+            const [passwordInput, setPasswordInput] = useState('');
+            const [newPasswordInput, setNewPasswordInput] = useState('');
+            const [confirmPasswordInput, setConfirmPasswordInput] = useState('');
+            const [loginError, setLoginError] = useState('');
+            const [dbUsers, setDbUsers] = useState({});
+
+            const [generatedPin, setGeneratedPin] = useState(null);
+            const [pinInput, setPinInput] = useState('');
+            const [isSendingPin, setIsSendingPin] = useState(false);
+
+            const [newProfileName, setNewProfileName] = useState('');
+            const [isAddingProfile, setIsAddingProfile] = useState(false);
+            const [isPermissionsModalOpen, setIsPermissionsModalOpen] = useState(false);
+
+            const [discordWebhook, setDiscordWebhook] = useState(() => {
+                return localStorage.getItem('rescue_discord_webhook') || "";
+            });
+
+            const [activeTab, setActiveTab] = useState('All');
+            const [searchTerm, setSearchTerm] = useState('');
+            const [statusFilter, setStatusFilter] = useState('All');
+            const [isModalOpen, setIsModalOpen] = useState(false);
+            const [isDiscordModalOpen, setIsDiscordModalOpen] = useState(false);
+            const [editingItem, setEditingItem] = useState(null);
+            const [discordStatus, setDiscordStatus] = useState({ loading: false, msg: '' });
+
+            const [formData, setFormData] = useState({
+                name: '',
+                category: 'Wodne',
+                inventoryNo: '',
+                location: '',
+                status: 'Sprawny',
+                expiryDate: '',
+                notes: '',
+                quantity: 1
+            });
+
+            useEffect(() => {
+                const unsubscribeUsers = db.collection("users").onSnapshot(async (snapshot) => {
+                    const usersMap = {};
+                    snapshot.forEach((doc) => {
+                        usersMap[doc.id] = doc.data();
+                    });
+
+                    if (snapshot.empty) {
+                        const defaultUsers = {
+                            "Filip": { password: "569s31", permissions: { add: true, edit: true, delete: true } },
+                            "Michał": { password: "569s31", permissions: { add: true, edit: true, delete: true } },
+                            "Jakub": { password: "569s31", permissions: { add: true, edit: true, delete: true } }
+                        };
+                        for (const [username, data] of Object.entries(defaultUsers)) {
+                            await db.collection("users").doc(username).set(data);
+                            usersMap[username] = data;
+                        }
+                    }
+                    setDbUsers(usersMap);
+                });
+
+                return () => unsubscribeUsers();
+            }, []);
+
+            useEffect(() => {
+                const unsubscribeLogs = db.collection("logs").orderBy("timestamp", "desc").onSnapshot((snapshot) => {
+                    const logItems = [];
+                    snapshot.forEach((doc) => {
+                        logItems.push({ idDoc: doc.id, ...doc.data() });
+                    });
+                    setLogs(logItems);
+                });
+
+                return () => unsubscribeLogs();
+            }, []);
+
+            useEffect(() => {
+                const unsubscribe = db.collection("equipment").onSnapshot((snapshot) => {
+                    const items = [];
+                    snapshot.forEach((doc) => {
+                        items.push({ idDoc: doc.id, ...doc.data() });
+                    });
+                    
+                    if (items.length === 0 && navigator.onLine) {
+                        const initialData = [
+                            { name: "Łódź płaskodawna z silnikiem Honda 50KM", category: "Wodne", inventoryNo: "EQUIP-WOD-001", location: "Garaż / Przyczepa P1", status: "Sprawny", expiryDate: "2026-11-20", lastInspector: "Michał", notes: "Przegląd silnika wygasa niebawem.", quantity: 1 },
+                            { name: "Torba Ratownicza R1 ze stelażem", category: "Medyczne", inventoryNo: "EQUIP-MED-001", location: "Wóz GBA 2,5/16", status: "Sprawny", expiryDate: "2026-11-15", lastInspector: "Filip", notes: "Kończy się ważność opatrunków.", quantity: 1 },
+                            { name: "Uprząż pełna ratownicza Singer Pro", category: "Wysokościowe", inventoryNo: "EQUIP-WYS-001", location: "Magazyn", status: "Sprawny", expiryDate: "2026-11-30", lastInspector: "Jakub", notes: "Wymaga inspekcji.", quantity: 2 }
+                        ];
+                        initialData.forEach(item => db.collection("equipment").add(item));
+                    } else {
+                        setEquipment(items);
+                    }
+                    setLoadingData(false);
+                }, (error) => {
+                    console.error("Błąd pobierania z Firestore: ", error);
+                    setLoadingData(false);
+                });
+
+                return () => unsubscribe();
+            }, []);
+
+            useEffect(() => {
+                localStorage.setItem('rescue_discord_webhook', discordWebhook);
+            }, [discordWebhook]);
+
+            useEffect(() => {
+                if (window.lucide) {
+                    window.lucide.createIcons();
+                }
+            });
+
+            const resetFormState = () => {
+                setSelectedUserForLogin(null);
+                setIsResetMode(false);
+                setPasswordInput('');
+                setNewPasswordInput('');
+                setConfirmPasswordInput('');
+                setLoginError('');
+                setIsAddingProfile(false);
+                setNewProfileName('');
+                setGeneratedPin(null);
+                setPinInput('');
+            };
+
+            const logAction = async (actionType, details) => {
+                const dateString = new Date().toLocaleString('pl-PL');
+                try {
+                    await db.collection("logs").add({
+                        user: currentUser,
+                        action: actionType,
+                        details: details,
+                        timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+                        dateStr: dateString
+                    });
+
+                    if (discordWebhook && navigator.onLine) {
+                        let color = 3447003;
+                        let emoji = '📝';
+                        if (actionType === 'DODANIE') { color = 5763719; emoji = '➕'; }
+                        else if (actionType === 'EDYCJA') { color = 16705300; emoji = '✏️'; }
+                        else if (actionType === 'USUNIĘCIE') { color = 15548997; emoji = '🗑️'; }
+
+                        const payload = {
+                            username: "System Ewidencji Sprzętu",
+                            avatar_url: "https://cdn-icons-png.flaticon.com/512/1023/1023656.png",
+                            embeds: [{
+                                title: `${emoji} Dziennik Zdarzeń: ${actionType}`,
+                                description: `**Użytkownik:** ${currentUser}\n**Szczegóły:** ${details}`,
+                                color: color,
+                                footer: { text: `Data: ${dateString}` }
+                            }]
+                        };
+
+                        fetch(discordWebhook, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(payload)
+                        }).catch(e => console.error("Błąd wysyłania logu na Discord:", e));
+                    }
+                } catch (err) {
+                    console.error("Błąd zapisu logu:", err);
+                }
+            };
+
+            const handleInitiateReset = async () => {
+                if (!isOnline) {
+                    setLoginError('Brak połączenia z siecią!');
+                    return;
+                }
+                if (!discordWebhook) {
+                    setLoginError('Brak skonfigurowanego Webhooka Discorda!');
+                    return;
+                }
+
+                setIsSendingPin(true);
+                setLoginError('');
+
+                const randomPin = Math.floor(100000 + Math.random() * 900000).toString();
+                setGeneratedPin(randomPin);
+
+                const payload = {
+                    username: "System Bezpieczeństwa OSP",
+                    avatar_url: "https://cdn-icons-png.flaticon.com/512/1023/1023656.png",
+                    embeds: [{
+                        title: "🔐 Weryfikacja Resetu Hasła",
+                        description: `Właśnie zgłoszono próbę zresetowania hasła dla profilu: **${selectedUserForLogin}**`,
+                        color: 16744200,
+                        fields: [
+                            { name: "🔑 Jednorazowy Kod PIN", value: `\`\`\`${randomPin}\`\`\``, inline: false },
+                            { name: "⏱️ Ważność", value: "Wpisz powyższy kod w panelu logowania, aby dokończyć reset.", inline: false }
+                        ],
+                        footer: { text: `System Nadzoru • ${new Date().toLocaleTimeString('pl-PL')}` }
+                    }]
+                };
+
+                try {
+                    const response = await fetch(discordWebhook, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+
+                    if (response.ok) {
+                        setIsResetMode(true);
+                    } else {
+                        setLoginError('Błąd wysyłania PIN na Discord (sprawdź Webhook).');
+                    }
+                } catch (err) {
+                    setLoginError('Błąd połączenia z siecią Discord.');
+                } finally {
+                    setIsSendingPin(false);
+                }
+            };
+
+            const handleCreateNewProfile = async (e) => {
+                e.preventDefault();
+                setLoginError('');
+                const trimmedName = newProfileName.trim();
+                
+                if (!trimmedName) {
+                    setLoginError('Wpisz nazwę profilu.');
+                    return;
+                }
+                if (dbUsers[trimmedName]) {
+                    setLoginError('Taki profil już istnieje w systemie!');
+                    return;
+                }
+
+                try {
+                    await db.collection("users").doc(trimmedName).set({ 
+                        password: "569s31", 
+                        permissions: { add: false, edit: false, delete: false } 
+                    });
+                    setSelectedUserForLogin(trimmedName);
+                    setIsAddingProfile(false);
+                    setNewProfileName('');
+                    setPasswordInput('');
+                } catch (err) {
+                    setLoginError('Błąd tworzenia profilu w bazie.');
+                }
+            };
+
+            const handleLoginSubmit = async (e) => {
+                e.preventDefault();
+                setLoginError('');
+
+                if (selectedUserForLogin === 'Guest') {
+                    setCurrentUser('Guest');
+                    return;
+                }
+
+                const userData = dbUsers[selectedUserForLogin];
+                const currentDbPassword = userData ? userData.password : '';
+
+                if (currentDbPassword === '569s31') {
+                    if (passwordInput !== '569s31') {
+                        setLoginError('Wpisz kod startowy: 569s31');
+                        return;
+                    }
+                    if (!newPasswordInput || newPasswordInput.length < 4) {
+                        setLoginError('Nowe hasło musi mieć co najmniej 4 znaki.');
+                        return;
+                    }
+                    if (newPasswordInput !== confirmPasswordInput) {
+                        setLoginError('Nowe hasła nie zgadzają się!');
+                        return;
+                    }
+
+                    try {
+                        await db.collection("users").doc(selectedUserForLogin).update({ password: newPasswordInput });
+                        setCurrentUser(selectedUserForLogin);
+                        resetFormState();
+                    } catch (err) {
+                        setLoginError('Błąd zapisu nowego hasła w bazie.');
+                    }
+                } else if (isResetMode) {
+                    if (pinInput !== generatedPin) {
+                        setLoginError('Nieprawidłowy kod PIN z Discorda!');
+                        return;
+                    }
+                    if (!newPasswordInput || newPasswordInput.length < 4) {
+                        setLoginError('Nowe hasło musi mieć co najmniej 4 znaki.');
+                        return;
+                    }
+                    if (newPasswordInput !== confirmPasswordInput) {
+                        setLoginError('Nowe hasła nie zgadzają się!');
+                        return;
+                    }
+
+                    try {
+                        await db.collection("users").doc(selectedUserForLogin).update({ password: newPasswordInput });
+                        setCurrentUser(selectedUserForLogin);
+                        resetFormState();
+                    } catch (err) {
+                        setLoginError('Błąd zapisu nowego hasła w bazie.');
+                    }
+                } else {
+                    if (passwordInput === currentDbPassword) {
+                        setCurrentUser(selectedUserForLogin);
+                        resetFormState();
+                    } else {
+                        setLoginError('Nieprawidłowe hasło!');
+                    }
+                }
+            };
+
+            const handleLogout = () => {
+                setCurrentUser(null);
+                resetFormState();
+            };
+
+            const userPermissions = useMemo(() => {
+                if (currentUser === 'Guest' || !currentUser) return { add: false, edit: false, delete: false };
+                if (currentUser === 'Michał') return { add: true, edit: true, delete: true };
+                const userObj = dbUsers[currentUser];
+                if (userObj && userObj.permissions) {
+                    return userObj.permissions;
+                }
+                return { add: false, edit: false, delete: false };
+            }, [currentUser, dbUsers]);
+
+            const handleToggleSpecificPermission = async (username, permKey, currentValue) => {
+                if (username === 'Michał') return;
+                const userObj = dbUsers[username] || {};
+                const currentPerms = userObj.permissions || { add: false, edit: false, delete: false };
+                const updatedPerms = { ...currentPerms, [permKey]: !currentValue };
+
+                try {
+                    await db.collection("users").doc(username).update({ permissions: updatedPerms });
+                } catch (err) {
+                    console.error("Błąd aktualizacji uprawnienia:", err);
+                }
+            };
+
+            const getDaysToExpiry = (dateString) => {
+                if (!dateString) return null;
+                const today = new Date();
+                today.setHours(0,0,0,0);
+                const exp = new Date(dateString);
+                exp.setHours(0,0,0,0);
+                const diffTime = exp - today;
+                return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+            };
+
+            const getExpiringItems = (daysThreshold = 30) => {
+                return equipment.filter(item => {
+                    const days = getDaysToExpiry(item.expiryDate);
+                    return days !== null && days <= daysThreshold;
+                });
+            };
+
+            const sendDiscordNotification = async (itemsToSend = null, isAuto = false) => {
+                if (!isOnline) {
+                    setDiscordStatus({ loading: false, msg: 'Brak sieci! Wysyłanie na Discord zostanie przywrócone po złapaniu połączenia.' });
+                    return;
+                }
+                if (!discordWebhook) {
+                    setDiscordStatus({ loading: false, msg: 'Ustaw najpierw link Webhooka w zakładce Discord!' });
+                    if (currentUser === 'Michał') setIsDiscordModalOpen(true);
+                    return;
+                }
+
+                const items = itemsToSend || getExpiringItems(30);
+                
+                if (items.length === 0) {
+                    setDiscordStatus({ loading: false, msg: 'Brak sprzętu wymagającego uwagi (wszystko aktualne).' });
+                    return;
+                }
+
+                setDiscordStatus({ loading: true, msg: 'Wysyłanie alertu na Discord...' });
+
+                const fields = items.map(item => {
+                    const days = getDaysToExpiry(item.expiryDate);
+                    const daysText = days < 0 ? `⚠️ WYGASŁO (${Math.abs(days)} dni temu)` : `⏱️ Zostało: ${days} dni`;
+                    
+                    let mentor = 'Filip (@Filip)';
+                    let icon = '💊';
+                    if (item.category === 'Wodne') {
+                        mentor = 'Michał (@Michał)';
+                        icon = '🚤';
+                    } else if (item.category === 'Wysokościowe') {
+                        mentor = 'Jakub (@Jakub)';
+                        icon = '🧗';
+                    }
+
+                    return {
+                        name: `${icon} ${item.name} (${item.inventoryNo})`,
+                        value: `• **Dział:** ${item.category}\n• **Lokalizacja:** ${item.location}\n• **Data ważności:** ${item.expiryDate} (${daysText})\n• **Opiekun:** ${mentor}\n• **Stan:** ${item.status}`,
+                        inline: false
+                    };
+                });
+
+                const payload = {
+                    username: "System Nadzoru Sprzętu OSP",
+                    avatar_url: "https://cdn-icons-png.flaticon.com/512/1023/1023656.png",
+                    content: isAuto 
+                        ? "🔔 **Automatyczny alert dzienny – Sprzęt z wygasającym terminem ważności!**" 
+                        : `📢 **Raport wygenerowany przez: ${currentUser}**`,
+                    embeds: [{
+                        title: "🚨 Alert Sprzętowy (Ważność ≤ 30 dni)",
+                        description: `Wykryto **${items.length}** pozycji sprzętowych wymagających przeglądu, legalizacji lub wymiany:`,
+                        color: 15158332,
+                        fields: fields,
+                        footer: {
+                            text: `OSP Racibórz-Markowice • Raport z dnia ${new Date().toLocaleDateString('pl-PL')}`
+                        }
+                    }]
+                };
+
+                try {
+                    const response = await fetch(discordWebhook, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+
+                    if (response.ok) {
+                        setDiscordStatus({ loading: false, msg: '✅ Powiadomienie zostało wysłane na Discorda!' });
+                    } else {
+                        setDiscordStatus({ loading: false, msg: '❌ Błąd wysyłania (sprawdź poprawność URL Webhooka).' });
+                    }
+                } catch (err) {
+                    setDiscordStatus({ loading: false, msg: '❌ Błąd połączenia z serwerem Discord.' });
+                }
+            };
+
+            const filteredEquipment = useMemo(() => {
+                return equipment.filter(item => {
+                    const matchesCategory = activeTab === 'All' || item.category === activeTab;
+                    const matchesSearch = (item.name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+                                          (item.inventoryNo || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+                                          (item.location || '').toLowerCase().includes(searchTerm.toLowerCase());
+                    const matchesStatus = statusFilter === 'All' || item.status === statusFilter;
+                    return matchesCategory && matchesSearch && matchesStatus;
+                });
+            }, [equipment, activeTab, searchTerm, statusFilter]);
+
+            const stats = useMemo(() => {
+                const total = equipment.length;
+                const wodne = equipment.filter(i => i.category === 'Wodne').length;
+                const medyczne = equipment.filter(i => i.category === 'Medyczne').length;
+                const wysokosciowe = equipment.filter(i => i.category === 'Wysokościowe').length;
+                const expiringSoon = equipment.filter(i => {
+                    const days = getDaysToExpiry(i.expiryDate);
+                    return days !== null && days <= 30;
+                }).length;
+                const damaged = equipment.filter(i => i.status !== 'Sprawny').length;
+
+                return { total, wodne, medyczne, wysokosciowe, expiringSoon, damaged };
+            }, [equipment]);
+
+            const handleSaveItem = async (e) => {
+                e.preventDefault();
+                if (!userPermissions.add && !editingItem) return;
+                if (!userPermissions.edit && editingItem) return;
+
+                const dataToSave = {
+                    ...formData,
+                    lastInspector: currentUser
+                };
+
+                if (editingItem) {
+                    await db.collection("equipment").doc(editingItem.idDoc).update(dataToSave);
+                    await logAction("EDYCJA", `Zaktualizowano sprzęt: "${formData.name}" (Nr: ${formData.inventoryNo}, Lokalizacja: ${formData.location})`);
+                } else {
+                    await db.collection("equipment").add(dataToSave);
+                    await logAction("DODANIE", `Dodano nowy sprzęt: "${formData.name}" (Nr: ${formData.inventoryNo}, Kategoria: ${formData.category})`);
+                }
+                closeModal();
+            };
+
+            const handleEdit = (item) => {
+                if (!userPermissions.edit) return;
+                setEditingItem(item);
+                setFormData({
+                    name: item.name || '',
+                    category: item.category || 'Wodne',
+                    inventoryNo: item.inventoryNo || '',
+                    location: item.location || '',
+                    status: item.status || 'Sprawny',
+                    expiryDate: item.expiryDate || '',
+                    notes: item.notes || '',
+                    quantity: item.quantity || 1
+                });
+                setIsModalOpen(true);
+            };
+
+            const handleDelete = async (itemToDelete) => {
+                if (!userPermissions.delete) return;
+                if (confirm(`Czy na pewno chcesz usunąć "${itemToDelete.name}" z ewidencji?`)) {
+                    await db.collection("equipment").doc(itemToDelete.idDoc).delete();
+                    await logAction("USUNIĘCIE", `Usunięto sprzęt: "${itemToDelete.name}" (Nr: ${itemToDelete.inventoryNo})`);
+                }
+            };
+
+            const openNewModal = () => {
+                if (!userPermissions.add) return;
+                setEditingItem(null);
+                setFormData({
+                    name: '',
+                    category: 'Wodne',
+                    inventoryNo: `EQUIP-${Date.now().toString().slice(-4)}`,
+                    location: '',
+                    status: 'Sprawny',
+                    expiryDate: '',
+                    notes: '',
+                    quantity: 1
+                });
+                setIsModalOpen(true);
+            };
+
+            const closeModal = () => {
+                setIsModalOpen(false);
+                setEditingItem(null);
+            };
+
+            const exportToCSV = () => {
+                const headers = ["Nazwa", "Kategoria", "Nr Inwentarzowy", "Lokalizacja", "Stan", "Data Ważności", "Opiekun", "Ilość", "Uwagi"];
+                const rows = filteredEquipment.map(i => [
+                    `"${i.name}"`,
+                    i.category,
+                    i.inventoryNo,
+                    `"${i.location}"`,
+                    i.status,
+                    i.expiryDate,
+                    i.lastInspector || '',
+                    i.quantity,
+                    `"${i.notes || ''}"`
+                ]);
+                const csvContent = "data:text/csv;charset=utf-8,\uFEFF" + [headers.join(","), ...rows.map(e => e.join(","))].join("\n");
+                const encodedUri = encodeURI(csvContent);
+                const link = document.createElement("a");
+                link.setAttribute("href", encodedUri);
+                link.setAttribute("download", `Ewidencja_Sprzetu_${activeTab}_${new Date().toISOString().split('T')[0]}.csv`);
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+            };
+
+            // LOGOWANIE
+            if (!currentUser) {
+                const userData = selectedUserForLogin ? dbUsers[selectedUserForLogin] : null;
+                const isFirstLogin = userData && userData.password === '569s31';
+
+                return (
+                    <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4">
+                        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-8 max-w-md w-full shadow-2xl text-center">
+                            <div className="inline-flex items-center justify-center p-4 bg-red-600/10 text-red-500 rounded-2xl mb-6">
+                                <i data-lucide="shield-alert" className="w-12 h-12"></i>
+                            </div>
+                            <h1 className="text-2xl font-bold text-white mb-2">Ewidencja Sprzętu Ratowniczego</h1>
+                            <p className="text-slate-400 mb-6 text-sm">OSP Racibórz-Markowice</p>
+                            
+                            {selectedUserForLogin ? (
+                                <form onSubmit={handleLoginSubmit} className="space-y-4 text-left">
+                                    <div className="flex items-center justify-between bg-slate-800/60 p-3 rounded-xl border border-slate-700">
+                                        <span className="text-sm text-slate-300">Profil: <strong className="text-white">{selectedUserForLogin}</strong></span>
+                                        <button type="button" onClick={resetFormState} className="text-xs text-slate-400 hover:text-white underline">Zmień</button>
+                                    </div>
+
+                                    {isFirstLogin ? (
+                                        <>
+                                            <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl text-xs text-amber-300">
+                                                ⚠️ Pierwsze logowanie! Wpisz kod startowy, a następnie ustaw nowe hasło.
+                                            </div>
+                                            <div>
+                                                <label className="block text-xs font-semibold text-slate-400 uppercase mb-1">Kod startowy</label>
+                                                <input type="password" required value={passwordInput} onChange={(e) => setPasswordInput(e.target.value)} placeholder="Hasło startowe" className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-red-500" />
+                                            </div>
+                                            <div>
+                                                <label className="block text-xs font-semibold text-slate-400 uppercase mb-1">Nowe hasło główne</label>
+                                                <input type="password" required value={newPasswordInput} onChange={(e) => setNewPasswordInput(e.target.value)} placeholder="Wpisz nowe hasło..." className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-red-500" />
+                                            </div>
+                                            <div>
+                                                <label className="block text-xs font-semibold text-slate-400 uppercase mb-1">Potwierdź nowe hasło</label>
+                                                <input type="password" required value={confirmPasswordInput} onChange={(e) => setConfirmPasswordInput(e.target.value)} placeholder="Powtórz nowe hasło..." className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-red-500" />
+                                            </div>
+                                        </>
+                                    ) : isResetMode ? (
+                                        <>
+                                            <div className="p-3 bg-indigo-500/10 border border-indigo-500/30 rounded-xl text-xs text-indigo-300 flex items-center space-x-2">
+                                                <i data-lucide="bell" className="w-4 h-4 text-indigo-400"></i>
+                                                <span>Kod PIN został wysłany na Twój serwer Discord!</span>
+                                            </div>
+                                            <div>
+                                                <label className="block text-xs font-semibold text-slate-400 uppercase mb-1">Jednorazowy Kod PIN z Discorda</label>
+                                                <input type="text" required autoFocus value={pinInput} onChange={(e) => setPinInput(e.target.value)} placeholder="Wpisz 6-cyfrowy PIN..." className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-sm font-mono text-white text-center tracking-widest focus:outline-none focus:border-indigo-500" />
+                                            </div>
+                                            <div>
+                                                <label className="block text-xs font-semibold text-slate-400 uppercase mb-1">Nowe hasło główne</label>
+                                                <input type="password" required value={newPasswordInput} onChange={(e) => setNewPasswordInput(e.target.value)} placeholder="Wpisz nowe hasło..." className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-red-500" />
+                                            </div>
+                                            <div>
+                                                <label className="block text-xs font-semibold text-slate-400 uppercase mb-1">Potwierdź nowe hasło</label>
+                                                <input type="password" required value={confirmPasswordInput} onChange={(e) => setConfirmPasswordInput(e.target.value)} placeholder="Powtórz nowe hasło..." className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-red-500" />
+                                            </div>
+                                        </>
+                                    ) : (
+                                        <div>
+                                            <div className="flex justify-between items-center mb-1">
+                                                <label className="block text-xs font-semibold text-slate-400 uppercase">Hasło główne</label>
+                                                <button type="button" disabled={isSendingPin} onClick={handleInitiateReset} className="text-[11px] text-indigo-400 hover:underline flex items-center space-x-1 disabled:opacity-50">
+                                                    <span>{isSendingPin ? 'Wysyłanie PIN...' : 'Wyślij PIN na Discord (Reset)'}</span>
+                                                </button>
+                                            </div>
+                                            <input type="password" autoFocus required value={passwordInput} onChange={(e) => setPasswordInput(e.target.value)} placeholder="Wpisz swoje hasło..." className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-red-500" />
+                                        </div>
+                                    )}
+
+                                    {loginError && <p className="text-xs text-red-400">{loginError}</p>}
+                                    
+                                    <div className="flex space-x-2 pt-2">
+                                        <button type="button" onClick={resetFormState} className="w-1/2 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-sm font-medium transition">Anuluj</button>
+                                        <button type="submit" className="w-1/2 py-2.5 bg-red-600 hover:bg-red-500 text-white rounded-xl text-sm font-semibold transition shadow-lg shadow-red-600/30">
+                                            {isFirstLogin || isResetMode ? 'Zapisz i Zaloguj' : 'Zaloguj'}
+                                        </button>
+                                    </div>
+                                </form>
+                            ) : isAddingProfile ? (
+                                <form onSubmit={handleCreateNewProfile} className="space-y-4 text-left">
+                                    <div className="flex items-center justify-between bg-slate-800/60 p-3 rounded-xl border border-slate-700">
+                                        <span className="text-sm text-white font-semibold">Dodawanie nowego profilu</span>
+                                        <button type="button" onClick={() => { setIsAddingProfile(false); setLoginError(''); }} className="text-xs text-slate-400 hover:text-white underline">Wróć</button>
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-semibold text-slate-400 uppercase mb-1">Imię / Stopień i Nazwisko (np. Naczelnik Jan)</label>
+                                        <input type="text" autoFocus required value={newProfileName} onChange={(e) => setNewProfileName(e.target.value)} placeholder="Wpisz nazwę profilu..." className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-red-500" />
+                                    </div>
+                                    <div className="text-[11px] text-slate-400">
+                                        ℹ️ Nowy profil otrzyma domyślnie brak uprawnień do modyfikacji. Administrator (Michał) może mu przypisać osobno dodawanie, edycję lub usuwanie.
+                                    </div>
+                                    {loginError && <p className="text-xs text-red-400">{loginError}</p>}
+                                    <div className="flex space-x-2 pt-2">
+                                        <button type="button" onClick={() => { setIsAddingProfile(false); setLoginError(''); }} className="w-1/2 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-sm font-medium transition">Anuluj</button>
+                                        <button type="submit" className="w-1/2 py-2.5 bg-red-600 hover:bg-red-500 text-white rounded-xl text-sm font-semibold transition shadow-lg shadow-red-600/30">Utwórz profil</button>
+                                    </div>
+                                </form>
+                            ) : (
+                                <div className="space-y-3">
+                                    {Object.keys(dbUsers).map((username) => {
+                                        const initialLetter = username.charAt(0).toUpperCase();
+                                        const userObj = dbUsers[username];
+                                        const perms = userObj.permissions || { add: false, edit: false, delete: false };
+                                        const hasAnyPerm = username === 'Michał' || perms.add || perms.edit || perms.delete;
+
+                                        return (
+                                            <button key={username} onClick={() => setSelectedUserForLogin(username)} className="w-full flex items-center justify-between p-3.5 bg-slate-800 hover:bg-slate-700/80 border border-slate-700 rounded-xl transition group text-left">
+                                                <div className="flex items-center space-x-3">
+                                                    <div className="w-9 h-9 rounded-lg bg-red-500/10 text-red-400 flex items-center justify-center font-bold">{initialLetter}</div>
+                                                    <div>
+                                                        <div className="font-semibold text-white group-hover:text-red-400 transition text-sm">{username}</div>
+                                                        <div className="text-xs text-slate-400">
+                                                            {username === 'Michał' ? 'Administrator' : hasAnyPerm ? `Uprawnienia: ${perms.add ? '➕' : ''} ${perms.edit ? '✏️' : ''} ${perms.delete ? '🗑️' : ''}` : 'Tylko odczyt'}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <i data-lucide="lock" className="w-4 h-4 text-slate-500 group-hover:text-red-400 transition"></i>
+                                            </button>
+                                        );
+                                    })}
+
+                                    <button onClick={() => { setSelectedUserForLogin('Guest'); setCurrentUser('Guest'); }} className="w-full flex items-center justify-between p-3.5 bg-slate-800/40 hover:bg-slate-800 border border-slate-800 rounded-xl transition group text-left">
+                                        <div className="flex items-center space-x-3">
+                                            <div className="w-9 h-9 rounded-lg bg-amber-500/10 text-amber-400 flex items-center justify-center font-bold">G</div>
+                                            <div><div className="font-semibold text-slate-300 group-hover:text-white transition text-sm">Gość / Obserwator</div><div className="text-xs text-amber-500/80">Podgląd bez hasła</div></div>
+                                        </div>
+                                        <i data-lucide="eye" className="w-4 h-4 text-slate-500 group-hover:text-amber-400 transition"></i>
+                                    </button>
+
+                                    <button onClick={() => { setIsAddingProfile(true); setLoginError(''); }} className="w-full py-2.5 bg-slate-800/20 hover:bg-slate-800/60 border border-dashed border-slate-700 text-slate-400 hover:text-white rounded-xl text-xs font-medium transition flex items-center justify-center space-x-2 mt-2">
+                                        <i data-lucide="user-plus" className="w-4 h-4"></i>
+                                        <span>+ Utwórz własny profil (np. Naczelnik)</span>
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                );
+            }
+
+            const isGuest = currentUser === 'Guest';
+
+            return (
+                <div key={currentUser || 'guest-session'} className="pb-12">
+                    {(!userPermissions.add && !userPermissions.edit && !userPermissions.delete || isGuest) && (
+                        <div className="bg-amber-500/10 border-b border-amber-500/20 text-amber-300 px-4 py-2 text-center text-sm font-medium flex items-center justify-center space-x-2 no-print">
+                            <i data-lucide="lock" className="w-4 h-4"></i>
+                            <span>Tryb podglądu (Tylko odczyt) – Twoje konto nie ma uprawnień do modyfikacji danych.</span>
+                        </div>
+                    )}
+
+                    <header className="bg-slate-950 border-b border-slate-800 sticky top-0 z-30 no-print">
+                        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                            <div className="flex items-center space-x-3">
+                                <div className="bg-red-600 p-2.5 rounded-xl text-white shadow-lg shadow-red-600/30">
+                                    <i data-lucide="shield-alert" className="w-6 h-6"></i>
+                                </div>
+                                <div>
+                                    <h1 className="text-xl font-bold text-white tracking-wide">SYSTEM REJESTRU SPRZĘTU RATOWNICZEGO</h1>
+                                    <p className="text-xs text-slate-400">OSP Racibórz-Markowice</p>
+                                </div>
+                            </div>
+
+                            <div className="flex items-center space-x-3">
+                                <div 
+                                    className={`flex items-center space-x-1.5 px-2.5 py-1.5 rounded-xl border text-xs font-medium transition ${isOnline ? 'bg-emerald-950/40 border-emerald-500/30 text-emerald-400' : 'bg-red-950/40 border-red-500/30 text-red-300'}`}
+                                    title={isOnline ? 'Połączono z siecią (Chmura aktywna)' : 'Tryb Offline - dane zapisane lokalnie'}
+                                >
+                                    <span className={`w-2 h-2 rounded-full ${isOnline ? 'bg-emerald-400 animate-pulse' : 'bg-red-500'}`}></span>
+                                    <span className="hidden sm:inline">{isOnline ? 'Online' : 'Offline'}</span>
+                                </div>
+
+                                <div className="flex items-center bg-slate-900 border border-slate-800 rounded-xl px-3 py-1.5 text-sm">
+                                    <span className="text-slate-400 text-xs mr-2">Zalogowany:</span>
+                                    <span className="font-semibold text-red-400">
+                                        {currentUser} {isGuest && '(Obserwator)'}
+                                    </span>
+                                </div>
+
+                                {currentUser === 'Michał' && (
+                                    <button onClick={() => setIsPermissionsModalOpen(true)} className="p-2 bg-cyan-600/20 hover:bg-cyan-600/30 text-cyan-400 border border-cyan-500/30 rounded-xl text-sm transition flex items-center space-x-2">
+                                        <i data-lucide="users" className="w-4 h-4"></i>
+                                        <span className="hidden sm:inline">Uprawnienia</span>
+                                    </button>
+                                )}
+
+                                {currentUser === 'Michał' && (
+                                    <button onClick={() => setIsDiscordModalOpen(true)} className="p-2 bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-400 border border-indigo-500/30 rounded-xl text-sm transition flex items-center space-x-2">
+                                        <i data-lucide="bell" className="w-4 h-4"></i>
+                                        <span className="hidden sm:inline">Discord</span>
+                                    </button>
+                                )}
+
+                                <button onClick={handleLogout} className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-sm transition flex items-center space-x-1" title="Wyloguj">
+                                    <i data-lucide="log-out" className="w-4 h-4"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </header>
+
+                    <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6 space-y-6">
+                        {loadingData ? (
+                            <div className="text-center py-20 text-slate-400">Ładowanie danych...</div>
+                        ) : (
+                            <>
+                                {/* 1. KAFELKI STATYSTYK */}
+                                <div className="grid grid-cols-2 md:grid-cols-6 gap-3 no-print">
+                                    <div onClick={() => setActiveTab('All')} className={`cursor-pointer border rounded-xl p-3.5 transition ${activeTab === 'All' ? 'bg-slate-800/90 border-slate-600' : 'bg-slate-800/60 border-slate-700/60 hover:border-slate-600'}`}>
+                                        <div className="text-xs font-medium text-slate-400 mb-1">Cały Sprzęt</div>
+                                        <div className="text-2xl font-bold text-white">{stats.total}</div>
+                                    </div>
+                                    <div onClick={() => setActiveTab('Wodne')} className={`cursor-pointer border rounded-xl p-3.5 transition ${activeTab === 'Wodne' ? 'bg-cyan-950/40 border-cyan-500/50' : 'bg-slate-800/60 border-slate-700/60 hover:border-slate-600'}`}>
+                                        <div className="text-xs font-medium text-cyan-400 mb-1 flex items-center justify-between"><span>Rat. Wodne</span><i data-lucide="waves" className="w-4 h-4"></i></div>
+                                        <div className="text-2xl font-bold text-cyan-200">{stats.wodne}</div>
+                                        <div className="text-[10px] text-slate-400 mt-1">Opiekun: Michał</div>
+                                    </div>
+                                    <div onClick={() => setActiveTab('Medyczne')} className={`cursor-pointer border rounded-xl p-3.5 transition ${activeTab === 'Medyczne' ? 'bg-emerald-950/40 border-emerald-500/50' : 'bg-slate-800/60 border-slate-700/60 hover:border-slate-600'}`}>
+                                        <div className="text-xs font-medium text-emerald-400 mb-1 flex items-center justify-between"><span>Rat. Medyczne</span><i data-lucide="cross" className="w-4 h-4"></i></div>
+                                        <div className="text-2xl font-bold text-emerald-200">{stats.medyczne}</div>
+                                        <div className="text-[10px] text-slate-400 mt-1">Opiekun: Filip</div>
+                                    </div>
+                                    <div onClick={() => setActiveTab('Wysokościowe')} className={`cursor-pointer border rounded-xl p-3.5 transition ${activeTab === 'Wysokościowe' ? 'bg-purple-950/40 border-purple-500/50' : 'bg-slate-800/60 border-slate-700/60 hover:border-slate-600'}`}>
+                                        <div className="text-xs font-medium text-purple-400 mb-1 flex items-center justify-between"><span>Wysokościowe</span><i data-lucide="mountain" className="w-4 h-4"></i></div>
+                                        <div className="text-2xl font-bold text-purple-200">{stats.wysokosciowe}</div>
+                                        <div className="text-[10px] text-slate-400 mt-1">Opiekun: Jakub</div>
+                                    </div>
+                                    <div className="bg-slate-800/60 border border-slate-700/60 rounded-xl p-3.5">
+                                        <div className="text-xs font-medium text-amber-400 mb-1 flex items-center justify-between"><span>Wygasa (≤ 30 dni)</span><i data-lucide="clock" className="w-4 h-4"></i></div>
+                                        <div className="text-2xl font-bold text-amber-300">{stats.expiringSoon}</div>
+                                    </div>
+                                    <div className="bg-slate-800/60 border border-slate-700/60 rounded-xl p-3.5">
+                                        <div className="text-xs font-medium text-red-400 mb-1 flex items-center justify-between"><span>W naprawie</span><i data-lucide="alert-triangle" className="w-4 h-4"></i></div>
+                                        <div className="text-2xl font-bold text-red-300">{stats.damaged}</div>
+                                    </div>
+                                </div>
+
+                                {/* 2. BANER ALERTU DISCORD */}
+                                {stats.expiringSoon > 0 && currentUser === 'Michał' && (
+                                    <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4 flex flex-col md:flex-row items-center justify-between gap-4 no-print">
+                                        <div className="flex items-center space-x-3">
+                                            <div className="p-2 bg-amber-500/20 text-amber-400 rounded-lg"><i data-lucide="bell-ring" className="w-6 h-6"></i></div>
+                                            <div>
+                                                <div className="font-semibold text-amber-200">Uwaga! Wykryto sprzęt wymagający przeglądu/wymiany</div>
+                                                <div className="text-xs text-amber-400/80">Liczba pozycji z terminem ≤ 30 dni: {stats.expiringSoon} szt.</div>
+                                            </div>
+                                        </div>
+                                        <button onClick={() => sendDiscordNotification()} disabled={discordStatus.loading} className="w-full md:w-auto px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-medium transition flex items-center justify-center space-x-2 shadow-lg shadow-indigo-600/30 disabled:opacity-50">
+                                            <i data-lucide="send" className="w-4 h-4"></i>
+                                            <span>{discordStatus.loading ? 'Wysyłanie...' : 'Wyślij alert na Discord'}</span>
+                                        </button>
+                                    </div>
+                                )}
+
+                                {discordStatus.msg && (
+                                    <div className="p-3 bg-slate-800 border border-slate-700 text-slate-200 rounded-xl text-sm flex items-center justify-between no-print">
+                                        <span>{discordStatus.msg}</span>
+                                        <button onClick={() => setDiscordStatus({ loading: false, msg: '' })} className="text-slate-400 hover:text-white">✕</button>
+                                    </div>
+                                )}
+
+                                {/* 3. PRZYCISKI AKCJI (DODAJ / EKSPORT / DRUKUJ) */}
+                                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 no-print">
+                                    <div className="flex items-center space-x-2">
+                                        {userPermissions.add && (
+                                            <button onClick={openNewModal} className="px-4 py-2 bg-red-600 hover:bg-red-500 text-white rounded-xl text-sm font-semibold transition flex items-center space-x-2 shadow-lg shadow-red-600/30">
+                                                <i data-lucide="plus" className="w-4 h-4"></i><span>Dodaj sprzęt</span>
+                                            </button>
+                                        )}
+                                        <button onClick={exportToCSV} className="p-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 rounded-xl text-sm transition" title="Eksport CSV"><i data-lucide="download" className="w-4 h-4"></i></button>
+                                        <button onClick={() => window.print()} className="p-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 rounded-xl text-sm transition" title="Drukuj"><i data-lucide="printer" className="w-4 h-4"></i></button>
+                                    </div>
+                                </div>
+
+                                {/* 4. WYSZUKIWARKA I FILTR STANU */}
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-3 no-print">
+                                    <div className="relative md:col-span-2">
+                                        <i data-lucide="search" className="w-4 h-4 absolute left-3.5 top-3.5 text-slate-500"></i>
+                                        <input type="text" placeholder="Szukaj po nazwie, numerze inwentarzowym lub lokalizacji..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full bg-slate-800/80 border border-slate-700 rounded-xl pl-10 pr-4 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-slate-500" />
+                                    </div>
+                                    <div>
+                                        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="w-full bg-slate-800/80 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-slate-500">
+                                            <option value="All">Wszystkie stany techniczne</option>
+                                            <option value="Sprawny">Sprawny</option>
+                                            <option value="W naprawie">W naprawie</option>
+                                            <option value="Wycofany">Wycofany</option>
+                                        </select>
+                                    </div>
+                                </div>
+
+                                {/* 5. PASEK ZAKŁADEK (KATEGORII) - POD WYSZUKIWARKĄ */}
+                                <div className="flex bg-slate-950 p-1 rounded-xl border border-slate-800 self-start flex-wrap gap-1 no-print">
+                                    <button onClick={() => setActiveTab('All')} className={`px-3 py-1.5 rounded-lg text-sm font-medium transition ${activeTab === 'All' ? 'bg-slate-800 text-white shadow-sm' : 'text-slate-400 hover:text-white'}`}>Wszystko</button>
+                                    <button onClick={() => setActiveTab('Wodne')} className={`px-3 py-1.5 rounded-lg text-sm font-medium transition flex items-center space-x-1.5 ${activeTab === 'Wodne' ? 'bg-cyan-600 text-white shadow-sm' : 'text-slate-400 hover:text-white'}`}>
+                                        <i data-lucide="waves" className="w-3.5 h-3.5"></i><span>Wodne (Michał)</span>
+                                    </button>
+                                    <button onClick={() => setActiveTab('Medyczne')} className={`px-3 py-1.5 rounded-lg text-sm font-medium transition flex items-center space-x-1.5 ${activeTab === 'Medyczne' ? 'bg-emerald-600 text-white shadow-sm' : 'text-slate-400 hover:text-white'}`}>
+                                        <i data-lucide="cross" className="w-3.5 h-3.5"></i><span>Medyczne (Filip)</span>
+                                    </button>
+                                    <button onClick={() => setActiveTab('Wysokościowe')} className={`px-3 py-1.5 rounded-lg text-sm font-medium transition flex items-center space-x-1.5 ${activeTab === 'Wysokościowe' ? 'bg-purple-600 text-white shadow-sm' : 'text-slate-400 hover:text-white'}`}>
+                                        <i data-lucide="mountain" className="w-3.5 h-3.5"></i><span>Wysokościowe (Jakub)</span>
+                                    </button>
+                                    <button onClick={() => setActiveTab('Logs')} className={`px-3 py-1.5 rounded-lg text-sm font-medium transition flex items-center space-x-1.5 ${activeTab === 'Logs' ? 'bg-amber-600 text-white shadow-sm' : 'text-slate-400 hover:text-white'}`}>
+                                        <i data-lucide="scroll" className="w-3.5 h-3.5"></i><span>📜 Rejestr Zdarzeń (Logi)</span>
+                                    </button>
+                                </div>
+
+                                {/* 6. TABELA ZE SPRZĘTEM LUB LOGI */}
+                                {activeTab === 'Logs' ? (
+                                    <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
+                                        <div className="p-6 border-b border-slate-800 flex items-center justify-between">
+                                            <div>
+                                                <h2 className="text-lg font-bold text-white flex items-center space-x-2">
+                                                    <i data-lucide="scroll" className="w-5 h-5 text-amber-400"></i>
+                                                    <span>Historia operacji w systemie</span>
+                                                </h2>
+                                                <p className="text-xs text-slate-400 mt-0.5">Podgląd wszystkich akcji wykonanych przez użytkowników. Zdarzenia są też wysyłane na Discorda.</p>
+                                            </div>
+                                        </div>
+                                        <div className="overflow-x-auto">
+                                            <table className="w-full text-left border-collapse">
+                                                <thead>
+                                                    <tr className="bg-slate-950/60 border-b border-slate-800 text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                                                        <th className="p-4">Data i Czas</th>
+                                                        <th className="p-4">Użytkownik</th>
+                                                        <th className="p-4">Akcja</th>
+                                                        <th className="p-4">Szczegóły operacji</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody className="divide-y divide-slate-800/60 text-sm">
+                                                    {logs.length === 0 ? (
+                                                        <tr><td colSpan="4" className="p-8 text-center text-slate-500">Brak zarejestrowanych zdarzeń w systemie.</td></tr>
+                                                    ) : (
+                                                        logs.map(log => {
+                                                            let actionBadge = "bg-slate-800 text-slate-300";
+                                                            if (log.action === 'DODANIE') actionBadge = "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30";
+                                                            else if (log.action === 'EDYCJA') actionBadge = "bg-amber-500/20 text-amber-300 border border-amber-500/30";
+                                                            else if (log.action === 'USUNIĘCIE') actionBadge = "bg-red-500/20 text-red-400 border border-red-500/30";
+
+                                                            return (
+                                                                <tr key={log.idDoc} className="hover:bg-slate-800/40 transition">
+                                                                    <td className="p-4 text-xs font-mono text-slate-400">{log.dateStr || 'Przed chwilą'}</td>
+                                                                    <td className="p-4 font-semibold text-white">{log.user || 'Nieznany'}</td>
+                                                                    <td className="p-4">
+                                                                        <span className={`px-2.5 py-1 rounded-lg text-xs font-semibold ${actionBadge}`}>{log.action}</span>
+                                                                    </td>
+                                                                    <td className="p-4 text-slate-300">{log.details}</td>
+                                                                </tr>
+                                                            );
+                                                        })
+                                                    )}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
+                                        {/* OFICJALNY NAGŁÓWEK PROTOKOŁU NA WYDRUK */}
+                                        <div className="print-only print-header">
+                                            <div className="flex justify-between items-start">
+                                                <div>
+                                                    <h1 className="text-xl font-bold text-black uppercase tracking-wider">Protokół Kontroli i Ewidencji Sprzętu</h1>
+                                                    <p className="text-xs text-black font-bold mt-0.5">OSP Racibórz-Markowice</p>
+                                                </div>
+                                                <div className="text-right text-xs text-black font-semibold">
+                                                    <p>Data: {new Date().toLocaleDateString('pl-PL')}</p>
+                                                    <p>Dział: {activeTab === 'All' ? 'Wszystkie' : activeTab}</p>
+                                                    <p>Razem pozycji: {filteredEquipment.length}</p>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div className="overflow-x-auto">
+                                            <table className="w-full text-left border-collapse">
+                                                <thead>
+                                                    <tr className="bg-slate-950/60 border-b border-slate-800 text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                                                        <th className="p-4">Sprzęt & Nr Inwentarzowy</th>
+                                                        <th className="p-4">Dział</th>
+                                                        <th className="p-4">Lokalizacja</th>
+                                                        <th className="p-4">Stan</th>
+                                                        <th className="p-4">Ważność/Przegląd</th>
+                                                        <th className="p-4">Opiekun</th>
+                                                        <th className="p-4 text-center">Ilość</th>
+                                                        {(userPermissions.edit || userPermissions.delete) && <th className="p-4 text-right no-print">Akcje</th>}
+                                                    </tr>
+                                                </thead>
+                                                <tbody className="divide-y divide-slate-800/60 text-sm">
+                                                    {filteredEquipment.length === 0 ? (
+                                                        <tr><td colSpan={(userPermissions.edit || userPermissions.delete) ? 8 : 7} className="p-8 text-center text-slate-500">Brak sprzętu spełniającego wybrane kryteria.</td></tr>
+                                                    ) : (
+                                                        filteredEquipment.map(item => {
+                                                            const daysToExp = getDaysToExpiry(item.expiryDate);
+                                                            
+                                                            let catBadge = "bg-slate-800 text-slate-300 border-slate-700";
+                                                            let catIcon = "box";
+                                                            if (item.category === 'Wodne') { catBadge = "bg-cyan-950/60 text-cyan-400 border-cyan-500/30"; catIcon = "waves"; }
+                                                            else if (item.category === 'Medyczne') { catBadge = "bg-emerald-950/60 text-emerald-400 border-emerald-500/30"; catIcon = "cross"; }
+                                                            else if (item.category === 'Wysokościowe') { catBadge = "bg-purple-950/60 text-purple-400 border-purple-500/30"; catIcon = "mountain"; }
+
+                                                            let statusBadge = "bg-slate-800 text-slate-300 border-slate-700";
+                                                            if (item.status === 'Sprawny') statusBadge = "bg-emerald-500/10 text-emerald-400 border-emerald-500/30";
+                                                            else if (item.status === 'W naprawie') statusBadge = "bg-amber-500/10 text-amber-400 border-amber-500/30";
+                                                            else if (item.status === 'Wycofany') statusBadge = "bg-red-500/10 text-red-400 border-red-500/30";
+
+                                                            return (
+                                                                <tr key={item.idDoc} className="hover:bg-slate-800/40 transition">
+                                                                    <td className="p-4">
+                                                                        <div className="font-semibold text-white print:text-black print:font-bold">{item.name}</div>
+                                                                        <div className="text-xs text-slate-400 font-mono mt-0.5 print:text-black print:font-semibold">{item.inventoryNo}</div>
+                                                                        {item.notes && <div className="text-xs text-slate-500 italic mt-1 print:text-black">{item.notes}</div>}
+                                                                    </td>
+                                                                    <td className="p-4">
+                                                                        <span className={`inline-flex items-center space-x-1.5 px-2.5 py-1 rounded-lg text-xs font-medium border badge-print ${catBadge}`}>
+                                                                            <i data-lucide={catIcon} className="w-3.5 h-3.5 no-print"></i>
+                                                                            <span>{item.category}</span>
+                                                                        </span>
+                                                                    </td>
+                                                                    <td className="p-4 text-slate-300 print:text-black print:font-medium">
+                                                                        <div className="flex items-center space-x-1.5"><i data-lucide="map-pin" className="w-3.5 h-3.5 text-slate-500 no-print"></i><span>{item.location}</span></div>
+                                                                    </td>
+                                                                    <td className="p-4">
+                                                                        <span className={`inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-semibold border badge-print ${statusBadge}`}>
+                                                                            {item.status}
+                                                                        </span>
+                                                                    </td>
+                                                                    <td className="p-4">
+                                                                        <div className="flex flex-col">
+                                                                            <span className="text-xs font-mono print:text-black print:font-bold">{item.expiryDate || 'Brak daty'}</span>
+                                                                            {daysToExp !== null && (
+                                                                                <span className={`text-[10px] mt-1 font-semibold px-2 py-0.5 rounded border max-w-max print-badge-clean ${daysToExp < 0 ? 'bg-red-500/10 text-red-400 border-red-500/30' : daysToExp <= 30 ? 'bg-amber-500/10 text-amber-400 border-amber-500/30' : 'bg-slate-800 text-slate-400 border-slate-700'}`}>
+                                                                                    {daysToExp < 0 ? `⚠️ Wygasło ${Math.abs(daysToExp)} dni temu` : `⏱️ Pozostało ${daysToExp} dni`}
+                                                                                </span>
+                                                                            )}
+                                                                        </div>
+                                                                    </td>
+                                                                    <td className="p-4 text-xs text-slate-400 print:text-black print:font-semibold"><span className="font-medium text-slate-300 print:text-black">{item.lastInspector || '-'}</span></td>
+                                                                    <td className="p-4 text-center font-semibold text-slate-200 print:text-black">{item.quantity}</td>
+                                                                    {(userPermissions.edit || userPermissions.delete) && (
+                                                                        <td className="p-4 text-right space-x-2 no-print">
+                                                                            {userPermissions.edit && <button onClick={() => handleEdit(item)} className="p-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg transition" title="Edytuj"><i data-lucide="edit-3" className="w-4 h-4"></i></button>}
+                                                                            {userPermissions.delete && <button onClick={() => handleDelete(item)} className="p-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-lg transition" title="Usuń"><i data-lucide="trash-2" className="w-4 h-4"></i></button>}
+                                                                        </td>
+                                                                    )}
+                                                                </tr>
+                                                            );
+                                                        })
+                                                    )}
+                                                </tbody>
+                                            </table>
+                                        </div>
+
+                                        {/* POLA DLA PODPISÓW NA WYDRUKU PROTOKOŁU */}
+                                        <div className="print-only print-signatures">
+                                            <div className="signature-box">
+                                                Podpis Sporządzającego
+                                            </div>
+                                            <div className="signature-box">
+                                                Podpis Naczelnika OSP
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+                            </>
+                        )}
+                    </main>
+
+                    {/* MODAL UPRAWNIEN */}
+                    {isPermissionsModalOpen && currentUser === 'Michał' && (
+                        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+                            <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-2xl w-full p-6 shadow-2xl space-y-4">
+                                <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                                    <div className="flex items-center space-x-2">
+                                        <i data-lucide="users" className="w-5 h-5 text-cyan-400"></i>
+                                        <h3 className="text-lg font-bold text-white">Szczegółowe Uprawnienia Profili</h3>
+                                    </div>
+                                    <button onClick={() => setIsPermissionsModalOpen(false)} className="text-slate-400 hover:text-white">✕</button>
+                                </div>
+                                <div className="space-y-3 text-sm text-slate-300">
+                                    <p className="text-xs text-slate-400">Zarządzaj niezależnie uprawnieniami dla poszczególnych użytkowników (Dodawanie, Edycja, Usuwanie):</p>
+                                    <div className="space-y-3 max-h-80 overflow-y-auto pr-1">
+                                        {Object.keys(dbUsers).map((username) => {
+                                            const userObj = dbUsers[username];
+                                            const perms = userObj.permissions || { add: false, edit: false, delete: false };
+                                            const isMichal = username === 'Michał';
+
+                                            return (
+                                                <div key={username} className="bg-slate-800/60 p-3.5 rounded-xl border border-slate-700 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                                                    <div>
+                                                        <div className="font-semibold text-white text-sm flex items-center space-x-2">
+                                                            <span>{username}</span>
+                                                            {isMichal && <span className="text-[10px] bg-cyan-500/20 text-cyan-400 px-2 py-0.5 rounded border border-cyan-500/30">Admin</span>}
+                                                        </div>
+                                                        <div className="text-[11px] text-slate-400">Stan uprawnień w bazie</div>
+                                                    </div>
+
+                                                    {isMichal ? (
+                                                        <span className="text-xs text-cyan-400 font-medium">Pełny dostęp (Administrator)</span>
+                                                    ) : (
+                                                        <div className="flex items-center space-x-2">
+                                                            <button 
+                                                                onClick={() => handleToggleSpecificPermission(username, 'add', perms.add)}
+                                                                className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition ${perms.add ? 'bg-emerald-600 text-white' : 'bg-slate-700 text-slate-400'}`}
+                                                                title="Dodawanie"
+                                                            >
+                                                                ➕ Dodaj
+                                                            </button>
+                                                            <button 
+                                                                onClick={() => handleToggleSpecificPermission(username, 'edit', perms.edit)}
+                                                                className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition ${perms.edit ? 'bg-amber-600 text-white' : 'bg-slate-700 text-slate-400'}`}
+                                                                title="Edycja"
+                                                            >
+                                                                ✏️ Edytuj
+                                                            </button>
+                                                            <button 
+                                                                onClick={() => handleToggleSpecificPermission(username, 'delete', perms.delete)}
+                                                                className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition ${perms.delete ? 'bg-red-600 text-white' : 'bg-slate-700 text-slate-400'}`}
+                                                                title="Usuń"
+                                                            >
+                                                                🗑️ Usuń
+                                                            </button>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                                <div className="flex items-center justify-end pt-3 border-t border-slate-800">
+                                    <button type="button" onClick={() => setIsPermissionsModalOpen(false)} className="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white rounded-xl text-sm font-semibold">Zamknij</button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* MODAL FORMULARZA */}
+                    {isModalOpen && (userPermissions.add || userPermissions.edit) && (
+                        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+                            <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-xl w-full p-6 shadow-2xl space-y-4">
+                                <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                                    <h3 className="text-lg font-bold text-white">{editingItem ? 'Edycja Przedmiotu' : 'Dodaj Nowy Sprzęt do Ewidencji'}</h3>
+                                    <button onClick={closeModal} className="text-slate-400 hover:text-white">✕</button>
+                                </div>
+                                <form onSubmit={handleSaveItem} className="space-y-4">
+                                    <div>
+                                        <label className="block text-xs font-semibold text-slate-400 uppercase mb-1">Nazwa sprzętu</label>
+                                        <input type="text" required value={formData.name} onChange={(e) => setFormData({...formData, name: e.target.value})} placeholder="np. Płetwy / Torba R1" className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white focus:outline-none" />
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div>
+                                            <label className="block text-xs font-semibold text-slate-400 uppercase mb-1">Dział / Kategoria</label>
+                                            <select value={formData.category} onChange={(e) => setFormData({...formData, category: e.target.value})} className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white focus:outline-none">
+                                                <option value="Wodne">Ratownictwo Wodne (Michał)</option>
+                                                <option value="Medyczne">Ratownictwo Medyczne (Filip)</option>
+                                                <option value="Wysokościowe">Ratownictwo Wysokościowe (Jakub)</option>
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-semibold text-slate-400 uppercase mb-1">Nr Inwentarzowy</label>
+                                            <input type="text" required value={formData.inventoryNo} onChange={(e) => setFormData({...formData, inventoryNo: e.target.value})} className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white focus:outline-none" />
+                                        </div>
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div>
+                                            <label className="block text-xs font-semibold text-slate-400 uppercase mb-1">Lokalizacja</label>
+                                            <input type="text" required value={formData.location} onChange={(e) => setFormData({...formData, location: e.target.value})} placeholder="np. Łódź P1 / GBA Skrytka" className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white focus:outline-none" />
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-semibold text-slate-400 uppercase mb-1">Ilość (szt.)</label>
+                                            <input type="number" min="1" value={formData.quantity} onChange={(e) => setFormData({...formData, quantity: parseInt(e.target.value) || 1})} className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white focus:outline-none" />
+                                        </div>
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div>
+                                            <label className="block text-xs font-semibold text-slate-400 uppercase mb-1">Stan Techniczny</label>
+                                            <select value={formData.status} onChange={(e) => setFormData({...formData, status: e.target.value})} className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white focus:outline-none">
+                                                <option value="Sprawny">Sprawny</option>
+                                                <option value="W naprawie">W naprawie</option>
+                                                <option value="Wycofany">Wycofany</option>
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-semibold text-slate-400 uppercase mb-1">Data Ważności / Przeglądu</label>
+                                            <input type="date" value={formData.expiryDate} onChange={(e) => setFormData({...formData, expiryDate: e.target.value})} className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white focus:outline-none" />
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-semibold text-slate-400 uppercase mb-1">Uwagi</label>
+                                        <textarea rows="2" value={formData.notes} onChange={(e) => setFormData({...formData, notes: e.target.value})} className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white focus:outline-none"></textarea>
+                                    </div>
+                                    <div className="flex items-center justify-end space-x-3 pt-3 border-t border-slate-800">
+                                        <button type="button" onClick={closeModal} className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-sm">Anuluj</button>
+                                        <button type="submit" className="px-4 py-2 bg-red-600 hover:bg-red-500 text-white rounded-xl text-sm font-semibold shadow-lg shadow-red-600/30">Zapisz sprzęt</button>
+                                    </div>
+                                </form>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* MODAL DISCORD (TYLKO DLA ADMINA - MICHAŁ) */}
+                    {isDiscordModalOpen && currentUser === 'Michał' && (
+                        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+                            <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4">
+                                <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                                    <div className="flex items-center space-x-2"><i data-lucide="bell" className="w-5 h-5 text-indigo-400"></i><h3 className="text-lg font-bold text-white">Discord Webhook (Administrator)</h3></div>
+                                    <button onClick={() => setIsDiscordModalOpen(false)} className="text-slate-400 hover:text-white">✕</button>
+                                </div>
+                                <div className="space-y-3 text-sm text-slate-300">
+                                    <p>Wklej adres URL Webhooka z Waszego serwera Discord:</p>
+                                    <div>
+                                        <label className="block text-xs font-semibold text-slate-400 uppercase mb-1">URL Webhooka</label>
+                                        <input type="text" value={discordWebhook} onChange={(e) => setDiscordWebhook(e.target.value)} placeholder="https://discord.com/api/webhooks/..." className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs font-mono text-white focus:outline-none focus:border-indigo-500" />
+                                    </div>
+                                </div>
+                                <div className="flex items-center justify-end pt-3 border-t border-slate-800">
+                                    <button type="button" onClick={() => setIsDiscordModalOpen(false)} className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-semibold">Zapisz i Zamknij</button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        }
+
+        ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+    </script>
+</body>
+</html>
