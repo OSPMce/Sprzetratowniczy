@@ -212,6 +212,14 @@
                 quantity: 1
             });
 
+            // Formatowanie daty z RRRR-MM-DD na DD.MM.RRRR
+            const formatDatePL = (dateString) => {
+                if (!dateString) return 'Brak daty';
+                const parts = dateString.split('-');
+                if (parts.length !== 3) return dateString;
+                return `${parts[2]}.${parts[1]}.${parts[0]}`;
+            };
+
             useEffect(() => {
                 const unsubscribeUsers = db.collection("users").onSnapshot(async (snapshot) => {
                     const usersMap = {};
@@ -560,7 +568,7 @@
 
                     return {
                         name: `${icon} ${item.name} (${item.inventoryNo})`,
-                        value: `• **Dział:** ${item.category}\n• **Lokalizacja:** ${item.location}\n• **Data ważności:** ${item.expiryDate} (${daysText})\n• **Opiekun:** ${mentor}\n• **Stan:** ${item.status}`,
+                        value: `• **Dział:** ${item.category}\n• **Lokalizacja:** ${item.location}\n• **Data ważności:** ${formatDatePL(item.expiryDate)} (${daysText})\n• **Opiekun:** ${mentor}\n• **Stan:** ${item.status}`,
                         inline: false
                     };
                 });
@@ -697,7 +705,7 @@
                     i.inventoryNo,
                     `"${i.location}"`,
                     i.status,
-                    i.expiryDate,
+                    i.expiryDate ? formatDatePL(i.expiryDate) : '',
                     i.lastInspector || '',
                     i.quantity,
                     `"${i.notes || ''}"`
@@ -1092,7 +1100,7 @@
                                                         <th className="p-4">Dział</th>
                                                         <th className="p-4">Lokalizacja</th>
                                                         <th className="p-4">Stan</th>
-                                                        <th className="p-4">Ważność/Przegląd</th>
+                                                        <th className="p-4">Ważność / Przegląd</th>
                                                         <th className="p-4">Opiekun</th>
                                                         <th className="p-4 text-center">Ilość</th>
                                                         {(userPermissions.edit || userPermissions.delete) && <th className="p-4 text-right no-print">Akcje</th>}
@@ -1139,7 +1147,7 @@
                                                                     </td>
                                                                     <td className="p-4">
                                                                         <div className="flex flex-col">
-                                                                            <span className="text-xs font-mono print:text-black print:font-bold">{item.expiryDate || 'Brak daty'}</span>
+                                                                            <span className="text-xs font-mono print:text-black print:font-bold">{formatDatePL(item.expiryDate)}</span>
                                                                             {daysToExp !== null && (
                                                                                 <span className={`text-[10px] mt-1 font-semibold px-2 py-0.5 rounded border max-w-max print-badge-clean ${daysToExp < 0 ? 'bg-red-500/10 text-red-400 border-red-500/30' : daysToExp <= 30 ? 'bg-amber-500/10 text-amber-400 border-amber-500/30' : 'bg-slate-800 text-slate-400 border-slate-700'}`}>
                                                                                     {daysToExp < 0 ? `⚠️ Wygasło ${Math.abs(daysToExp)} dni temu` : `⏱️ Pozostało ${daysToExp} dni`}
@@ -1180,7 +1188,7 @@
 
                     {/* MODAL UPRAWNIEN */}
                     {isPermissionsModalOpen && currentUser === 'Michał' && (
-                        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+                        <div className="fixed inset-0 z-50 bg-slate-950/90 flex items-center justify-center p-4">
                             <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-2xl w-full p-6 shadow-2xl space-y-4">
                                 <div className="flex items-center justify-between border-b border-slate-800 pb-3">
                                     <div className="flex items-center space-x-2">
@@ -1248,7 +1256,7 @@
 
                     {/* MODAL FORMULARZA */}
                     {isModalOpen && (userPermissions.add || userPermissions.edit) && (
-                        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+                        <div className="fixed inset-0 z-50 bg-slate-950/90 flex items-center justify-center p-4">
                             <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-xl w-full p-6 shadow-2xl space-y-4">
                                 <div className="flex items-center justify-between border-b border-slate-800 pb-3">
                                     <h3 className="text-lg font-bold text-white">{editingItem ? 'Edycja Przedmiotu' : 'Dodaj Nowy Sprzęt do Ewidencji'}</h3>
@@ -1312,7 +1320,7 @@
 
                     {/* MODAL DISCORD (TYLKO DLA ADMINA - MICHAŁ) */}
                     {isDiscordModalOpen && currentUser === 'Michał' && (
-                        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+                        <div className="fixed inset-0 z-50 bg-slate-950/90 flex items-center justify-center p-4">
                             <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4">
                                 <div className="flex items-center justify-between border-b border-slate-800 pb-3">
                                     <div className="flex items-center space-x-2"><i data-lucide="bell" className="w-5 h-5 text-indigo-400"></i><h3 className="text-lg font-bold text-white">Discord Webhook (Administrator)</h3></div>
