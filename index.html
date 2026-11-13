@@ -189,7 +189,6 @@
             const [isAddingProfile, setIsAddingProfile] = useState(false);
             const [isPermissionsModalOpen, setIsPermissionsModalOpen] = useState(false);
 
-            // Dwa osobne webhooki
             const [webhookLogs, setWebhookLogs] = useState(() => {
                 return localStorage.getItem('rescue_logs_webhook') || "";
             });
@@ -216,7 +215,6 @@
                 quantity: 1
             });
 
-            // Formatowanie daty z RRRR-MM-DD na DD.MM.RRRR
             const formatDatePL = (dateString) => {
                 if (!dateString) return 'Brak daty';
                 const parts = dateString.split('-');
@@ -321,7 +319,6 @@
                         dateStr: dateString
                     });
 
-                    // Logi używają webhooka logów
                     if (webhookLogs && navigator.onLine) {
                         let color = 3447003;
                         let emoji = '📝';
@@ -330,8 +327,6 @@
                         else if (actionType === 'USUNIĘCIE') { color = 15548997; emoji = '🗑️'; }
 
                         const payload = {
-                            username: "System Ewidencji Sprzętu",
-                            avatar_url: "https://cdn-icons-png.flaticon.com/512/1023/1023656.png",
                             embeds: [{
                                 title: `${emoji} Dziennik Zdarzeń: ${actionType}`,
                                 description: `**Użytkownik:** ${currentUser}\n**Szczegóły:** ${details}`,
@@ -356,7 +351,6 @@
                     setLoginError('Brak połączenia z siecią!');
                     return;
                 }
-                // Reset hasła używa webhooka logów (lub można też powiadomień, tu spięte pod logi)
                 if (!webhookLogs) {
                     setLoginError('Brak skonfigurowanego Webhooka Logów na Discordzie!');
                     return;
@@ -369,8 +363,6 @@
                 setGeneratedPin(randomPin);
 
                 const payload = {
-                    username: "System Bezpieczeństwa OSP",
-                    avatar_url: "https://cdn-icons-png.flaticon.com/512/1023/1023656.png",
                     embeds: [{
                         title: "🔐 Weryfikacja Resetu Hasła",
                         description: `Właśnie zgłoszono próbę zresetowania hasła dla profilu: **${selectedUserForLogin}**`,
@@ -544,7 +536,6 @@
                     setDiscordStatus({ loading: false, msg: 'Brak sieci! Wysyłanie na Discord zostanie przywrócone po złapaniu połączenia.' });
                     return;
                 }
-                // Powiadomienia sprzętowe używają webhooka powiadomień
                 if (!webhookAlerts) {
                     setDiscordStatus({ loading: false, msg: 'Ustaw najpierw link Webhooka Powiadomień w ustawieniach Discord!' });
                     if (currentUser === 'Michał') setIsDiscordModalOpen(true);
@@ -582,8 +573,6 @@
                 });
 
                 const payload = {
-                    username: "System Nadzoru Sprzętu OSP",
-                    avatar_url: "https://cdn-icons-png.flaticon.com/512/1023/1023656.png",
                     content: isAuto 
                         ? "🔔 **Automatyczny alert dzienny – Sprzęt z wygasającym terminem ważności!**" 
                         : `📢 **Raport wygenerowany przez: ${currentUser}**`,
