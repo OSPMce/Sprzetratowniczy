@@ -132,7 +132,7 @@
 
     <!-- KOD REACT -->
     <script type="text/babel">
-        const { useState, useEffect, useMemo } = React;
+        const { useState, useEffect, useMemo, useRef } = React;
 
         const firebaseConfig = {
             apiKey: "AIzaSyCrLGk-40kQDIgY4m0vLFyHj9POkEpSNXE",
@@ -160,6 +160,7 @@
             const [equipment, setEquipment] = useState([]);
             const [logs, setLogs] = useState([]);
             const [loadingData, setLoadingData] = useState(true);
+            const isCheckingAutoAlerts = useRef(false);
 
             useEffect(() => {
                 const handleOnline = () => setIsOnline(true);
@@ -220,6 +221,23 @@
                 const parts = dateString.split('-');
                 if (parts.length !== 3) return dateString;
                 return `${parts[2]}.${parts[1]}.${parts[0]}`;
+            };
+
+            const getDiscordIdForCategory = (category) => {
+                if (category === 'Wodne') return '809038103351656448'; // Michał[cite: 9]
+                if (category === 'Medyczne') return '426396900636491777'; // Filip[cite: 9]
+                if (category === 'Wysokościowe') return '891652182175272990'; // Jakub[cite: 9]
+                return null;
+            };
+
+            const getDaysToExpiry = (dateString) => {
+                if (!dateString) return null;
+                const today = new Date();
+                today.setHours(0,0,0,0);
+                const exp = new Date(dateString);
+                exp.setHours(0,0,0,0);
+                const diffTime = exp - today;
+                return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
             };
 
             useEffect(() => {
@@ -295,6 +313,79 @@
                 }
             });
 
+            // AUTOMATYCZNE POWIADOMIENIA INDYWIDUALNE (co 7 dni gdy <=30 dni, co 2 dni gdy wygasło)
+            useEffect(() => {
+                if (loadingData || !isOnline || !webhookAlerts || equipment.length === 0) return;
+                if (isCheckingAutoAlerts.current) return;
+
+                const checkAndSendIndividualAlerts = async () => {
+                    isCheckingAutoAlerts.current = true;
+                    const now = Date.now();
+                    const msPerDay = 1000 * 60 * 60 * 24;
+
+                    for (const item of equipment) {
+                        const days = getDaysToExpiry(item.expiryDate);
+                        if (days === null || days > 30) continue;
+
+                        // Ustal interwał przypomnienia
+                        const requiredIntervalDays = days < 0 ? 2 : 7;
+                        const lastNotifiedMs = item.lastNotified || 0;
+                        const daysSinceLastAlert = (now - lastNotifiedMs) / msPerDay;
+
+                        if (daysSinceLastAlert >= requiredIntervalDays) {
+                            const discordId = getDiscordIdForCategory(item.category);
+                            const mention = discordId ? `<@${discordId}>` : '';
+                            
+                            let icon = '💊';
+                            if (item.category === 'Wodne') icon = '🚤';
+                            else if (item.category === 'Wysokościowe') icon = '🧗';
+
+                            const isExpired = days < 0;
+                            const statusText = isExpired 
+                                ? `⚠️ **TERMIN WYGASŁ (${Math.abs(days)} dni temu)!** (Przypomnienie co 2 dni)` 
+                                : `⏱️ **Zostało: ${days} dni** (Przypomnienie co 7 dni)`;
+
+                            const payload = {
+                                content: `${mention} ${isExpired ? '🚨 **PILNE – SPRZĘT PO TERMINIE!**' : '🔔 **Przypomnienie o zbliżającym się przeglądzie/ważności sprzętu**'}`,
+                                embeds: [{
+                                    title: `${icon} ${item.name} (${item.inventoryNo})`,
+                                    description: statusText,
+                                    color: isExpired ? 15548997 : 16705300,
+                                    fields: [
+                                        { name: "Dział", value: item.category, inline: true },
+                                        { name: "Lokalizacja", value: item.location, inline: true },
+                                        { name: "Data ważności", value: formatDatePL(item.expiryDate), inline: true },
+                                        { name: "Stan techniczny", value: item.status, inline: true }
+                                    ],
+                                    footer: {
+                                        text: `OSP Racibórz-Markowice • Automatyczny nadzór`
+                                    }
+                                }]
+                            };
+
+                            try {
+                                const res = await fetch(webhookAlerts, {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify(payload)
+                                });
+
+                                if (res.ok) {
+                                    await db.collection("equipment").doc(item.idDoc).update({
+                                        lastNotified: now
+                                    });
+                                }
+                            } catch (err) {
+                                console.error("Błąd automatycznego alertu dla:", item.name, err);
+                            }
+                        }
+                    }
+                    isCheckingAutoAlerts.current = false;
+                };
+
+                checkAndSendIndividualAlerts();
+            }, [equipment, loadingData, isOnline, webhookAlerts]);
+
             const resetFormState = () => {
                 setSelectedUserForLogin(null);
                 setIsResetMode(false);
@@ -308,6 +399,7 @@
                 setPinInput('');
             };
 
+            // LOGI BEZ PINGÓW
             const logAction = async (actionType, details) => {
                 const dateString = new Date().toLocaleString('pl-PL');
                 try {
@@ -514,16 +606,6 @@
                 }
             };
 
-            const getDaysToExpiry = (dateString) => {
-                if (!dateString) return null;
-                const today = new Date();
-                today.setHours(0,0,0,0);
-                const exp = new Date(dateString);
-                exp.setHours(0,0,0,0);
-                const diffTime = exp - today;
-                return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-            };
-
             const getExpiringItems = (daysThreshold = 30) => {
                 return equipment.filter(item => {
                     const days = getDaysToExpiry(item.expiryDate);
@@ -531,7 +613,8 @@
                 });
             };
 
-            const sendDiscordNotification = async (itemsToSend = null, isAuto = false) => {
+            // RĘCZNY ZBIORCZY ALERT PO KLIKNIĘCIU PRZYCISKU
+            const sendDiscordNotification = async (itemsToSend = null) => {
                 if (!isOnline) {
                     setDiscordStatus({ loading: false, msg: 'Brak sieci! Wysyłanie na Discord zostanie przywrócone po złapaniu połączenia.' });
                     return;
@@ -549,19 +632,22 @@
                     return;
                 }
 
-                setDiscordStatus({ loading: true, msg: 'Wysyłanie alertu na Discord...' });
+                setDiscordStatus({ loading: true, msg: 'Wysyłanie zbiorczego alertu na Discord...' });
+
+                const uniqueIds = [...new Set(items.map(i => getDiscordIdForCategory(i.category)).filter(Boolean))];
+                const mentionsString = uniqueIds.map(id => `<@${id}>`).join(' ');
 
                 const fields = items.map(item => {
                     const days = getDaysToExpiry(item.expiryDate);
                     const daysText = days < 0 ? `⚠️ WYGASŁO (${Math.abs(days)} dni temu)` : `⏱️ Zostało: ${days} dni`;
                     
-                    let mentor = 'Filip (@Filip)';
+                    let mentor = 'Filip';
                     let icon = '💊';
                     if (item.category === 'Wodne') {
-                        mentor = 'Michał (@Michał)';
+                        mentor = 'Michał';
                         icon = '🚤';
                     } else if (item.category === 'Wysokościowe') {
-                        mentor = 'Jakub (@Jakub)';
+                        mentor = 'Jakub';
                         icon = '🧗';
                     }
 
@@ -573,11 +659,9 @@
                 });
 
                 const payload = {
-                    content: isAuto 
-                        ? "🔔 **Automatyczny alert dzienny – Sprzęt z wygasającym terminem ważności!**" 
-                        : `📢 **Raport wygenerowany przez: ${currentUser}**`,
+                    content: `${mentionsString} 📢 **Ręczny raport zbiorczy wygenerowany przez: ${currentUser}**`,
                     embeds: [{
-                        title: "🚨 Alert Sprzętowy (Ważność ≤ 30 dni)",
+                        title: "🚨 Zbiorczy Alert Sprzętowy (Ważność ≤ 30 dni)",
                         description: `Wykryto **${items.length}** pozycji sprzętowych wymagających przeglądu, legalizacji lub wymiany:`,
                         color: 15158332,
                         fields: fields,
@@ -595,7 +679,7 @@
                     });
 
                     if (response.ok) {
-                        setDiscordStatus({ loading: false, msg: '✅ Powiadomienie zostało wysłane na Discorda!' });
+                        setDiscordStatus({ loading: false, msg: '✅ Zbiorcze powiadomienie zostało wysłane na Discorda!' });
                     } else {
                         setDiscordStatus({ loading: false, msg: '❌ Błąd wysyłania (sprawdź poprawność URL Webhooka Powiadomień).' });
                     }
@@ -640,9 +724,14 @@
                 };
 
                 if (editingItem) {
+                    // Jeśli zmieniono datę ważności, zresetuj licznik powiadomień aby cykl zaczął się od nowa
+                    if (editingItem.expiryDate !== formData.expiryDate) {
+                        dataToSave.lastNotified = 0;
+                    }
                     await db.collection("equipment").doc(editingItem.idDoc).update(dataToSave);
                     await logAction("EDYCJA", `Zaktualizowano sprzęt: "${formData.name}" (Nr: ${formData.inventoryNo}, Lokalizacja: ${formData.location})`);
                 } else {
+                    dataToSave.lastNotified = 0;
                     await db.collection("equipment").add(dataToSave);
                     await logAction("DODANIE", `Dodano nowy sprzęt: "${formData.name}" (Nr: ${formData.inventoryNo}, Kategoria: ${formData.category})`);
                 }
@@ -1325,11 +1414,11 @@
                                 </div>
                                 <div className="space-y-4 text-sm text-slate-300">
                                     <div>
-                                        <label className="block text-xs font-semibold text-slate-400 uppercase mb-1">1. Webhook dla Logów Systemowych (dodania, edycje, usuwania, piny resetu)</label>
+                                        <label className="block text-xs font-semibold text-slate-400 uppercase mb-1">1. Webhook dla Logów Systemowych (bez pingów)</label>
                                         <input type="text" value={webhookLogs} onChange={(e) => setWebhookLogs(e.target.value)} placeholder="https://discord.com/api/webhooks/..." className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs font-mono text-white focus:outline-none focus:border-indigo-500" />
                                     </div>
                                     <div>
-                                        <label className="block text-xs font-semibold text-slate-400 uppercase mb-1">2. Webhook dla Powiadomień (alerty o zbliżającym się końcu ważności sprzętu)</label>
+                                        <label className="block text-xs font-semibold text-slate-400 uppercase mb-1">2. Webhook dla Powiadomień (co 7 dni przy ≤30 dniach, co 2 dni po terminie)</label>
                                         <input type="text" value={webhookAlerts} onChange={(e) => setWebhookAlerts(e.target.value)} placeholder="https://discord.com/api/webhooks/..." className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs font-mono text-white focus:outline-none focus:border-indigo-500" />
                                     </div>
                                 </div>
