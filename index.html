@@ -189,8 +189,12 @@
             const [isAddingProfile, setIsAddingProfile] = useState(false);
             const [isPermissionsModalOpen, setIsPermissionsModalOpen] = useState(false);
 
-            const [discordWebhook, setDiscordWebhook] = useState(() => {
-                return localStorage.getItem('rescue_discord_webhook') || "";
+            // Dwa osobne webhooki
+            const [webhookLogs, setWebhookLogs] = useState(() => {
+                return localStorage.getItem('rescue_logs_webhook') || "";
+            });
+            const [webhookAlerts, setWebhookAlerts] = useState(() => {
+                return localStorage.getItem('rescue_alerts_webhook') || "";
             });
 
             const [activeTab, setActiveTab] = useState('All');
@@ -283,8 +287,9 @@
             }, []);
 
             useEffect(() => {
-                localStorage.setItem('rescue_discord_webhook', discordWebhook);
-            }, [discordWebhook]);
+                localStorage.setItem('rescue_logs_webhook', webhookLogs);
+                localStorage.setItem('rescue_alerts_webhook', webhookAlerts);
+            }, [webhookLogs, webhookAlerts]);
 
             useEffect(() => {
                 if (window.lucide) {
@@ -316,7 +321,8 @@
                         dateStr: dateString
                     });
 
-                    if (discordWebhook && navigator.onLine) {
+                    // Logi używają webhooka logów
+                    if (webhookLogs && navigator.onLine) {
                         let color = 3447003;
                         let emoji = '📝';
                         if (actionType === 'DODANIE') { color = 5763719; emoji = '➕'; }
@@ -334,7 +340,7 @@
                             }]
                         };
 
-                        fetch(discordWebhook, {
+                        fetch(webhookLogs, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify(payload)
@@ -350,8 +356,9 @@
                     setLoginError('Brak połączenia z siecią!');
                     return;
                 }
-                if (!discordWebhook) {
-                    setLoginError('Brak skonfigurowanego Webhooka Discorda!');
+                // Reset hasła używa webhooka logów (lub można też powiadomień, tu spięte pod logi)
+                if (!webhookLogs) {
+                    setLoginError('Brak skonfigurowanego Webhooka Logów na Discordzie!');
                     return;
                 }
 
@@ -377,7 +384,7 @@
                 };
 
                 try {
-                    const response = await fetch(discordWebhook, {
+                    const response = await fetch(webhookLogs, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify(payload)
@@ -386,7 +393,7 @@
                     if (response.ok) {
                         setIsResetMode(true);
                     } else {
-                        setLoginError('Błąd wysyłania PIN na Discord (sprawdź Webhook).');
+                        setLoginError('Błąd wysyłania PIN na Discord (sprawdź Webhook Logów).');
                     }
                 } catch (err) {
                     setLoginError('Błąd połączenia z siecią Discord.');
@@ -537,8 +544,9 @@
                     setDiscordStatus({ loading: false, msg: 'Brak sieci! Wysyłanie na Discord zostanie przywrócone po złapaniu połączenia.' });
                     return;
                 }
-                if (!discordWebhook) {
-                    setDiscordStatus({ loading: false, msg: 'Ustaw najpierw link Webhooka w zakładce Discord!' });
+                // Powiadomienia sprzętowe używają webhooka powiadomień
+                if (!webhookAlerts) {
+                    setDiscordStatus({ loading: false, msg: 'Ustaw najpierw link Webhooka Powiadomień w ustawieniach Discord!' });
                     if (currentUser === 'Michał') setIsDiscordModalOpen(true);
                     return;
                 }
@@ -591,7 +599,7 @@
                 };
 
                 try {
-                    const response = await fetch(discordWebhook, {
+                    const response = await fetch(webhookAlerts, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify(payload)
@@ -600,7 +608,7 @@
                     if (response.ok) {
                         setDiscordStatus({ loading: false, msg: '✅ Powiadomienie zostało wysłane na Discorda!' });
                     } else {
-                        setDiscordStatus({ loading: false, msg: '❌ Błąd wysyłania (sprawdź poprawność URL Webhooka).' });
+                        setDiscordStatus({ loading: false, msg: '❌ Błąd wysyłania (sprawdź poprawność URL Webhooka Powiadomień).' });
                     }
                 } catch (err) {
                     setDiscordStatus({ loading: false, msg: '❌ Błąd połączenia z serwerem Discord.' });
@@ -763,7 +771,7 @@
                                         <>
                                             <div className="p-3 bg-indigo-500/10 border border-indigo-500/30 rounded-xl text-xs text-indigo-300 flex items-center space-x-2">
                                                 <i data-lucide="bell" className="w-4 h-4 text-indigo-400"></i>
-                                                <span>Kod PIN został wysłany na Twój serwer Discord!</span>
+                                                <span>Kod PIN został wysłany na Twój serwer Discord (kanał logów)!</span>
                                             </div>
                                             <div>
                                                 <label className="block text-xs font-semibold text-slate-400 uppercase mb-1">Jednorazowy Kod PIN z Discorda</label>
@@ -1323,14 +1331,17 @@
                         <div className="fixed inset-0 z-50 bg-slate-950/90 flex items-center justify-center p-4">
                             <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4">
                                 <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-                                    <div className="flex items-center space-x-2"><i data-lucide="bell" className="w-5 h-5 text-indigo-400"></i><h3 className="text-lg font-bold text-white">Discord Webhook (Administrator)</h3></div>
+                                    <div className="flex items-center space-x-2"><i data-lucide="bell" className="w-5 h-5 text-indigo-400"></i><h3 className="text-lg font-bold text-white">Konfiguracja Webhooków Discord</h3></div>
                                     <button onClick={() => setIsDiscordModalOpen(false)} className="text-slate-400 hover:text-white">✕</button>
                                 </div>
-                                <div className="space-y-3 text-sm text-slate-300">
-                                    <p>Wklej adres URL Webhooka z Waszego serwera Discord:</p>
+                                <div className="space-y-4 text-sm text-slate-300">
                                     <div>
-                                        <label className="block text-xs font-semibold text-slate-400 uppercase mb-1">URL Webhooka</label>
-                                        <input type="text" value={discordWebhook} onChange={(e) => setDiscordWebhook(e.target.value)} placeholder="https://discord.com/api/webhooks/..." className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs font-mono text-white focus:outline-none focus:border-indigo-500" />
+                                        <label className="block text-xs font-semibold text-slate-400 uppercase mb-1">1. Webhook dla Logów Systemowych (dodania, edycje, usuwania, piny resetu)</label>
+                                        <input type="text" value={webhookLogs} onChange={(e) => setWebhookLogs(e.target.value)} placeholder="https://discord.com/api/webhooks/..." className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs font-mono text-white focus:outline-none focus:border-indigo-500" />
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-semibold text-slate-400 uppercase mb-1">2. Webhook dla Powiadomień (alerty o zbliżającym się końcu ważności sprzętu)</label>
+                                        <input type="text" value={webhookAlerts} onChange={(e) => setWebhookAlerts(e.target.value)} placeholder="https://discord.com/api/webhooks/..." className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs font-mono text-white focus:outline-none focus:border-indigo-500" />
                                     </div>
                                 </div>
                                 <div className="flex items-center justify-end pt-3 border-t border-slate-800">
