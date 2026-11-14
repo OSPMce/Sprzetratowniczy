@@ -134,6 +134,12 @@
     <script type="text/babel">
         const { useState, useEffect, useMemo, useRef } = React;
 
+        // =========================================================================
+        // KONFIGURACJA WEBHOOKÓW DISCORD (Wklej tutaj swoje linki raz na zawsze)
+        // =========================================================================
+        const DISCORD_LOGS_WEBHOOK = "https://discord.com/api/webhooks/1568569583936217109/iMr8EHEJHRvCBm_MtgZoN7lUYwSL2d_WgWjPMlx_NVcMidQlZQaap4T6dRC6Ayr8sNjh";   // Tutaj wklej link do webhooka logów
+        const DISCORD_ALERTS_WEBHOOK = "https://discord.com/api/webhooks/1570785111748780122/ITDS0tpqNBVIBk4JsQQYCSpGoISroeesLN46WE273oMPi9Ln5QiW1RHciSptkQk8IUp3"; // Tutaj wklej link do webhooka alertów/powiadomień
+
         const firebaseConfig = {
             apiKey: "AIzaSyCrLGk-40kQDIgY4m0vLFyHj9POkEpSNXE",
             authDomain: "sprzetratowniczy-a2fc7.firebaseapp.com",
@@ -190,18 +196,10 @@
             const [isAddingProfile, setIsAddingProfile] = useState(false);
             const [isPermissionsModalOpen, setIsPermissionsModalOpen] = useState(false);
 
-            const [webhookLogs, setWebhookLogs] = useState(() => {
-                return localStorage.getItem('rescue_logs_webhook') || "";
-            });
-            const [webhookAlerts, setWebhookAlerts] = useState(() => {
-                return localStorage.getItem('rescue_alerts_webhook') || "";
-            });
-
             const [activeTab, setActiveTab] = useState('All');
             const [searchTerm, setSearchTerm] = useState('');
             const [statusFilter, setStatusFilter] = useState('All');
             const [isModalOpen, setIsModalOpen] = useState(false);
-            const [isDiscordModalOpen, setIsDiscordModalOpen] = useState(false);
             const [editingItem, setEditingItem] = useState(null);
             const [discordStatus, setDiscordStatus] = useState({ loading: false, msg: '' });
 
@@ -224,9 +222,9 @@
             };
 
             const getDiscordIdForCategory = (category) => {
-                if (category === 'Wodne') return '809038103351656448'; // Michał[cite: 9]
-                if (category === 'Medyczne') return '426396900636491777'; // Filip[cite: 9]
-                if (category === 'Wysokościowe') return '891652182175272990'; // Jakub[cite: 9]
+                if (category === 'Wodne') return '809038103351656448'; // Michał
+                if (category === 'Medyczne') return '426396900636491777'; // Filip
+                if (category === 'Wysokościowe') return '891652182175272990'; // Jakub
                 return null;
             };
 
@@ -303,11 +301,6 @@
             }, []);
 
             useEffect(() => {
-                localStorage.setItem('rescue_logs_webhook', webhookLogs);
-                localStorage.setItem('rescue_alerts_webhook', webhookAlerts);
-            }, [webhookLogs, webhookAlerts]);
-
-            useEffect(() => {
                 if (window.lucide) {
                     window.lucide.createIcons();
                 }
@@ -315,7 +308,7 @@
 
             // AUTOMATYCZNE POWIADOMIENIA INDYWIDUALNE (co 7 dni gdy <=30 dni, co 2 dni gdy wygasło)
             useEffect(() => {
-                if (loadingData || !isOnline || !webhookAlerts || equipment.length === 0) return;
+                if (loadingData || !isOnline || !DISCORD_ALERTS_WEBHOOK || equipment.length === 0) return;
                 if (isCheckingAutoAlerts.current) return;
 
                 const checkAndSendIndividualAlerts = async () => {
@@ -327,7 +320,6 @@
                         const days = getDaysToExpiry(item.expiryDate);
                         if (days === null || days > 30) continue;
 
-                        // Ustal interwał przypomnienia
                         const requiredIntervalDays = days < 0 ? 2 : 7;
                         const lastNotifiedMs = item.lastNotified || 0;
                         const daysSinceLastAlert = (now - lastNotifiedMs) / msPerDay;
@@ -364,7 +356,7 @@
                             };
 
                             try {
-                                const res = await fetch(webhookAlerts, {
+                                const res = await fetch(DISCORD_ALERTS_WEBHOOK, {
                                     method: 'POST',
                                     headers: { 'Content-Type': 'application/json' },
                                     body: JSON.stringify(payload)
@@ -384,7 +376,7 @@
                 };
 
                 checkAndSendIndividualAlerts();
-            }, [equipment, loadingData, isOnline, webhookAlerts]);
+            }, [equipment, loadingData, isOnline]);
 
             const resetFormState = () => {
                 setSelectedUserForLogin(null);
@@ -411,7 +403,7 @@
                         dateStr: dateString
                     });
 
-                    if (webhookLogs && navigator.onLine) {
+                    if (DISCORD_LOGS_WEBHOOK && navigator.onLine) {
                         let color = 3447003;
                         let emoji = '📝';
                         if (actionType === 'DODANIE') { color = 5763719; emoji = '➕'; }
@@ -427,7 +419,7 @@
                             }]
                         };
 
-                        fetch(webhookLogs, {
+                        fetch(DISCORD_LOGS_WEBHOOK, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify(payload)
@@ -443,8 +435,8 @@
                     setLoginError('Brak połączenia z siecią!');
                     return;
                 }
-                if (!webhookLogs) {
-                    setLoginError('Brak skonfigurowanego Webhooka Logów na Discordzie!');
+                if (!DISCORD_LOGS_WEBHOOK) {
+                    setLoginError('Brak skonfigurowanego Webhooka Logów w kodzie skryptu!');
                     return;
                 }
 
@@ -468,7 +460,7 @@
                 };
 
                 try {
-                    const response = await fetch(webhookLogs, {
+                    const response = await fetch(DISCORD_LOGS_WEBHOOK, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify(payload)
@@ -619,9 +611,8 @@
                     setDiscordStatus({ loading: false, msg: 'Brak sieci! Wysyłanie na Discord zostanie przywrócone po złapaniu połączenia.' });
                     return;
                 }
-                if (!webhookAlerts) {
-                    setDiscordStatus({ loading: false, msg: 'Ustaw najpierw link Webhooka Powiadomień w ustawieniach Discord!' });
-                    if (currentUser === 'Michał') setIsDiscordModalOpen(true);
+                if (!DISCORD_ALERTS_WEBHOOK) {
+                    setDiscordStatus({ loading: false, msg: 'Brak zdefiniowanego DISCORD_ALERTS_WEBHOOK w kodzie skryptu!' });
                     return;
                 }
 
@@ -672,7 +663,7 @@
                 };
 
                 try {
-                    const response = await fetch(webhookAlerts, {
+                    const response = await fetch(DISCORD_ALERTS_WEBHOOK, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify(payload)
@@ -681,7 +672,7 @@
                     if (response.ok) {
                         setDiscordStatus({ loading: false, msg: '✅ Zbiorcze powiadomienie zostało wysłane na Discorda!' });
                     } else {
-                        setDiscordStatus({ loading: false, msg: '❌ Błąd wysyłania (sprawdź poprawność URL Webhooka Powiadomień).' });
+                        setDiscordStatus({ loading: false, msg: '❌ Błąd wysyłania (sprawdź poprawność URL DISCORD_ALERTS_WEBHOOK).' });
                     }
                 } catch (err) {
                     setDiscordStatus({ loading: false, msg: '❌ Błąd połączenia z serwerem Discord.' });
@@ -724,7 +715,6 @@
                 };
 
                 if (editingItem) {
-                    // Jeśli zmieniono datę ważności, zresetuj licznik powiadomień aby cykl zaczął się od nowa
                     if (editingItem.expiryDate !== formData.expiryDate) {
                         dataToSave.lastNotified = 0;
                     }
@@ -740,11 +730,28 @@
 
             const handleEdit = (item) => {
                 if (!userPermissions.edit) return;
+                setEditingItem(null); // Nowy element edytowany
                 setEditingItem(item);
                 setFormData({
                     name: item.name || '',
                     category: item.category || 'Wodne',
                     inventoryNo: item.inventoryNo || '',
+                    location: item.location || '',
+                    status: item.status || 'Sprawny',
+                    expiryDate: item.expiryDate || '',
+                    notes: item.notes || '',
+                    quantity: item.quantity || 1
+                });
+                setIsModalOpen(true);
+            };
+
+            const handleClone = (item) => {
+                if (!userPermissions.add) return;
+                setEditingItem(null); // Tworzenie nowego elementu
+                setFormData({
+                    name: `${item.name} (Kopia)`,
+                    category: item.category || 'Wodne',
+                    inventoryNo: `${item.inventoryNo}-K`,
                     location: item.location || '',
                     status: item.status || 'Sprawny',
                     expiryDate: item.expiryDate || '',
@@ -993,13 +1000,6 @@
                                     </button>
                                 )}
 
-                                {currentUser === 'Michał' && (
-                                    <button onClick={() => setIsDiscordModalOpen(true)} className="p-2 bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-400 border border-indigo-500/30 rounded-xl text-sm transition flex items-center space-x-2">
-                                        <i data-lucide="bell" className="w-4 h-4"></i>
-                                        <span className="hidden sm:inline">Discord</span>
-                                    </button>
-                                )}
-
                                 <button onClick={handleLogout} className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-sm transition flex items-center space-x-1" title="Wyloguj">
                                     <i data-lucide="log-out" className="w-4 h-4"></i>
                                 </button>
@@ -1189,12 +1189,12 @@
                                                         <th className="p-4">Ważność / Przegląd</th>
                                                         <th className="p-4">Opiekun</th>
                                                         <th className="p-4 text-center">Ilość</th>
-                                                        {(userPermissions.edit || userPermissions.delete) && <th className="p-4 text-right no-print">Akcje</th>}
+                                                        {(userPermissions.edit || userPermissions.delete || userPermissions.add) && <th className="p-4 text-right no-print">Akcje</th>}
                                                     </tr>
                                                 </thead>
                                                 <tbody className="divide-y divide-slate-800/60 text-sm">
                                                     {filteredEquipment.length === 0 ? (
-                                                        <tr><td colSpan={(userPermissions.edit || userPermissions.delete) ? 8 : 7} className="p-8 text-center text-slate-500">Brak sprzętu spełniającego wybrane kryteria.</td></tr>
+                                                        <tr><td colSpan={(userPermissions.edit || userPermissions.delete || userPermissions.add) ? 8 : 7} className="p-8 text-center text-slate-500">Brak sprzętu spełniającego wybrane kryteria.</td></tr>
                                                     ) : (
                                                         filteredEquipment.map(item => {
                                                             const daysToExp = getDaysToExpiry(item.expiryDate);
@@ -1243,8 +1243,9 @@
                                                                     </td>
                                                                     <td className="p-4 text-xs text-slate-400 print:text-black print:font-semibold"><span className="font-medium text-slate-300 print:text-black">{item.lastInspector || '-'}</span></td>
                                                                     <td className="p-4 text-center font-semibold text-slate-200 print:text-black">{item.quantity}</td>
-                                                                    {(userPermissions.edit || userPermissions.delete) && (
-                                                                        <td className="p-4 text-right space-x-2 no-print">
+                                                                    {(userPermissions.edit || userPermissions.delete || userPermissions.add) && (
+                                                                        <td className="p-4 text-right space-x-1.5 no-print">
+                                                                            {userPermissions.add && <button onClick={() => handleClone(item)} className="p-1.5 bg-indigo-500/10 hover:bg-indigo-500/25 text-indigo-400 rounded-lg transition" title="Klonuj"><i data-lucide="copy" className="w-4 h-4"></i></button>}
                                                                             {userPermissions.edit && <button onClick={() => handleEdit(item)} className="p-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg transition" title="Edytuj"><i data-lucide="edit-3" className="w-4 h-4"></i></button>}
                                                                             {userPermissions.delete && <button onClick={() => handleDelete(item)} className="p-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-lg transition" title="Usuń"><i data-lucide="trash-2" className="w-4 h-4"></i></button>}
                                                                         </td>
@@ -1345,7 +1346,7 @@
                         <div className="fixed inset-0 z-50 bg-slate-950/90 flex items-center justify-center p-4">
                             <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-xl w-full p-6 shadow-2xl space-y-4">
                                 <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-                                    <h3 className="text-lg font-bold text-white">{editingItem ? 'Edycja Przedmiotu' : 'Dodaj Nowy Sprzęt do Ewidencji'}</h3>
+                                    <h3 className="text-lg font-bold text-white">{editingItem ? 'Edycja Przedmiotu' : 'Dodaj / Klonuj Sprzęt do Ewidencji'}</h3>
                                     <button onClick={closeModal} className="text-slate-400 hover:text-white">✕</button>
                                 </div>
                                 <form onSubmit={handleSaveItem} className="space-y-4">
@@ -1400,31 +1401,6 @@
                                         <button type="submit" className="px-4 py-2 bg-red-600 hover:bg-red-500 text-white rounded-xl text-sm font-semibold shadow-lg shadow-red-600/30">Zapisz sprzęt</button>
                                     </div>
                                 </form>
-                            </div>
-                        </div>
-                    )}
-
-                    {/* MODAL DISCORD (TYLKO DLA ADMINA - MICHAŁ) */}
-                    {isDiscordModalOpen && currentUser === 'Michał' && (
-                        <div className="fixed inset-0 z-50 bg-slate-950/90 flex items-center justify-center p-4">
-                            <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4">
-                                <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-                                    <div className="flex items-center space-x-2"><i data-lucide="bell" className="w-5 h-5 text-indigo-400"></i><h3 className="text-lg font-bold text-white">Konfiguracja Webhooków Discord</h3></div>
-                                    <button onClick={() => setIsDiscordModalOpen(false)} className="text-slate-400 hover:text-white">✕</button>
-                                </div>
-                                <div className="space-y-4 text-sm text-slate-300">
-                                    <div>
-                                        <label className="block text-xs font-semibold text-slate-400 uppercase mb-1">1. Webhook dla Logów Systemowych (bez pingów)</label>
-                                        <input type="text" value={webhookLogs} onChange={(e) => setWebhookLogs(e.target.value)} placeholder="https://discord.com/api/webhooks/..." className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs font-mono text-white focus:outline-none focus:border-indigo-500" />
-                                    </div>
-                                    <div>
-                                        <label className="block text-xs font-semibold text-slate-400 uppercase mb-1">2. Webhook dla Powiadomień (co 7 dni przy ≤30 dniach, co 2 dni po terminie)</label>
-                                        <input type="text" value={webhookAlerts} onChange={(e) => setWebhookAlerts(e.target.value)} placeholder="https://discord.com/api/webhooks/..." className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs font-mono text-white focus:outline-none focus:border-indigo-500" />
-                                    </div>
-                                </div>
-                                <div className="flex items-center justify-end pt-3 border-t border-slate-800">
-                                    <button type="button" onClick={() => setIsDiscordModalOpen(false)} className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-semibold">Zapisz i Zamknij</button>
-                                </div>
                             </div>
                         </div>
                     )}
