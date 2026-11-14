@@ -201,6 +201,7 @@
             const [statusFilter, setStatusFilter] = useState('All');
             const [isModalOpen, setIsModalOpen] = useState(false);
             const [editingItem, setEditingItem] = useState(null);
+            const [isCloning, setIsCloning] = useState(false);
             const [discordStatus, setDiscordStatus] = useState({ loading: false, msg: '' });
 
             const [formData, setFormData] = useState({
@@ -222,9 +223,9 @@
             };
 
             const getDiscordIdForCategory = (category) => {
-                if (category === 'Wodne') return '809038103351656448'; // Michał
-                if (category === 'Medyczne') return '426396900636491777'; // Filip
-                if (category === 'Wysokościowe') return '891652182175272990'; // Jakub
+                if (category === 'Wodne') return '809038103351656448'; // Michał[cite: 9]
+                if (category === 'Medyczne') return '426396900636491777'; // Filip[cite: 9]
+                if (category === 'Wysokościowe') return '891652182175272990'; // Jakub[cite: 9]
                 return null;
             };
 
@@ -714,7 +715,7 @@
                     lastInspector: currentUser
                 };
 
-                if (editingItem) {
+                if (editingItem && !isCloning) {
                     if (editingItem.expiryDate !== formData.expiryDate) {
                         dataToSave.lastNotified = 0;
                     }
@@ -723,15 +724,15 @@
                 } else {
                     dataToSave.lastNotified = 0;
                     await db.collection("equipment").add(dataToSave);
-                    await logAction("DODANIE", `Dodano nowy sprzęt: "${formData.name}" (Nr: ${formData.inventoryNo}, Kategoria: ${formData.category})`);
+                    await logAction("DODANIE", `Dodano nowy sprzęt (klon/nowy): "${formData.name}" (Nr: ${formData.inventoryNo}, Kategoria: ${formData.category})`);
                 }
                 closeModal();
             };
 
             const handleEdit = (item) => {
                 if (!userPermissions.edit) return;
-                setEditingItem(null); // Nowy element edytowany
                 setEditingItem(item);
+                setIsCloning(false);
                 setFormData({
                     name: item.name || '',
                     category: item.category || 'Wodne',
@@ -747,11 +748,12 @@
 
             const handleClone = (item) => {
                 if (!userPermissions.add) return;
-                setEditingItem(null); // Tworzenie nowego elementu
+                setEditingItem(null);
+                setIsCloning(true);
                 setFormData({
-                    name: `${item.name} (Kopia)`,
+                    name: item.name || '',
                     category: item.category || 'Wodne',
-                    inventoryNo: `${item.inventoryNo}-K`,
+                    inventoryNo: item.inventoryNo || '',
                     location: item.location || '',
                     status: item.status || 'Sprawny',
                     expiryDate: item.expiryDate || '',
@@ -772,6 +774,7 @@
             const openNewModal = () => {
                 if (!userPermissions.add) return;
                 setEditingItem(null);
+                setIsCloning(false);
                 setFormData({
                     name: '',
                     category: 'Wodne',
@@ -788,6 +791,7 @@
             const closeModal = () => {
                 setIsModalOpen(false);
                 setEditingItem(null);
+                setIsCloning(false);
             };
 
             const exportToCSV = () => {
@@ -1346,7 +1350,9 @@
                         <div className="fixed inset-0 z-50 bg-slate-950/90 flex items-center justify-center p-4">
                             <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-xl w-full p-6 shadow-2xl space-y-4">
                                 <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-                                    <h3 className="text-lg font-bold text-white">{editingItem ? 'Edycja Przedmiotu' : 'Dodaj / Klonuj Sprzęt do Ewidencji'}</h3>
+                                    <h3 className="text-lg font-bold text-white">
+                                        {isCloning ? 'Klonuj Sprzęt do Ewidencji' : (editingItem ? 'Edycja Przedmiotu' : 'Dodaj Nowy Sprzęt do Ewidencji')}
+                                    </h3>
                                     <button onClick={closeModal} className="text-slate-400 hover:text-white">✕</button>
                                 </div>
                                 <form onSubmit={handleSaveItem} className="space-y-4">
